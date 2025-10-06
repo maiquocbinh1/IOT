@@ -1,0 +1,76 @@
+.dashboard-container {
+  display: flex;
+  height: 100vh;
+  background-color: #f8f8f8;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  background: linear-gradient(135deg, #fef7e0 0%, #f5f0e8 100%);
+  padding: 15px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-shrink: 0;
+}
+
+.main-title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+.notification-icon {
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 15px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.section-title {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+/* Grid layout for dashboard sections */
+.current-parameters {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.temperature-humidity-chart {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.light-intensity-chart {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.device-control {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
