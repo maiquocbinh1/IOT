@@ -17,7 +17,7 @@ const TemperatureHumidityChart = () => {
     <div className="chart-container">
       <h2 className="section-title">Temperature & Humidity</h2>
       <div className="chart-wrapper">
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={250}>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="day" />

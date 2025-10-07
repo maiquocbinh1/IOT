@@ -12,6 +12,7 @@
 .chart-wrapper {
   margin-top: 10px;
   flex: 1;
+  min-height: 250px;
 }
 
 .recharts-wrapper {

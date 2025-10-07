@@ -1,17 +1,12 @@
-.dashboard-container {
-  display: flex;
-  height: 100vh;
-  background-color: #f8f8f8;
-  overflow: hidden;
-}
-
-.main-content {
+.dashboard-page {
   flex: 1;
   background: linear-gradient(135deg, #fef7e0 0%, #f5f0e8 100%);
-  padding: 15px;
-  overflow: hidden;
+  padding: 24px;
+  height: 100vh;
+  overflow: auto;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .main-header {

@@ -1,0 +1,221 @@
+/* Main Container */
+.profile-page {
+  flex: 1;
+  background: #f0f8ff;
+  padding: 15px 20px;
+  border-radius: 10px;
+  margin: 15px;
+  height: calc(100vh - 30px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  margin-bottom: 15px;
+}
+
+.page-title {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0;
+}
+
+.bell {
+  font-size: 20px;
+}
+
+/* Profile Content */
+.profile-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  min-height: 0;
+}
+
+/* Profile Card */
+.profile-card {
+  background: #fef7e0;
+  border-radius: 20px;
+  padding: 25px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  max-width: 450px;
+  width: 100%;
+  text-align: center;
+  max-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Profile Picture */
+.profile-picture {
+  margin-bottom: 15px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.profile-picture img {
+  width: 120px;
+  height: 160px;
+  border-radius: 15px;
+  object-fit: cover;
+  border: 3px solid #007bff;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+  display: block;
+  margin: 0 auto;
+}
+
+/* User Info */
+.user-info {
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.user-name {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #333;
+  margin: 0 0 5px 0;
+}
+
+.user-class {
+  font-size: 0.9rem;
+  color: #666;
+  margin: 0;
+}
+
+/* Contact Info */
+.contact-info {
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.info-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.info-field label {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+  margin-bottom: 5px;
+}
+
+.info-box {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: monospace;
+  width: 100%;
+  text-align: left;
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 15px;
+  flex-shrink: 0;
+}
+
+.button-row {
+  display: flex;
+  gap: 15px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  flex: 1;
+}
+
+.github-btn {
+  background: #333;
+  color: white;
+}
+
+.github-btn:hover {
+  background: #555;
+}
+
+.pdf-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.pdf-btn:hover {
+  background: #c82333;
+}
+
+.update-btn {
+  background: #28a745;
+  color: white;
+  width: 100%;
+}
+
+.update-btn:hover {
+  background: #218838;
+}
+
+.external-icon {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* API Documentation */
+.api-links {
+  border-top: 2px solid #e9ecef;
+  padding-top: 15px;
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+
+.api-links h3 {
+  font-size: 1rem;
+  color: #333;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.api-link {
+  text-align: center;
+}
+
+.api-link-text {
+  color: #007bff;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.api-link-text:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+

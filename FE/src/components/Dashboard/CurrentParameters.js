@@ -1,10 +1,14 @@
 import React from 'react';
 import './CurrentParameters.css';
 
+// Current Parameters Component
 const CurrentParameters = () => {
   return (
     <div className="current-parameters">
+      {/* Section Title */}
       <h2 className="section-title">Current Parameters</h2>
+      
+      {/* Parameters Grid */}
       <div className="parameters-grid">
         <div className="parameter-card">
           <div className="parameter-icon">🌡️</div>
