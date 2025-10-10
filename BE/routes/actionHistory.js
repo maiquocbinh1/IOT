@@ -10,8 +10,41 @@ router.get('/', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
         
-        const actionHistory = await ActionHistory.getAll(limit, offset);
-        const totalCount = await ActionHistory.getTotalCount();
+        // Get filter parameters
+        const { search, device, time, sortField, sortDirection, filterType } = req.query;
+        
+        // Build filter conditions
+        let whereConditions = [];
+        let queryParams = [];
+        
+        if (search) {
+            // Exact match search
+            whereConditions.push(`(id = ? OR device_name = ? OR action = ? OR description = ? OR timestamp = ?)`);
+            queryParams.push(search, search, search, search, search);
+        }
+        
+        if (device && device !== 'ALL') {
+            whereConditions.push(`device_name = ?`);
+            queryParams.push(device);
+        }
+        
+        if (time) {
+            whereConditions.push(`timestamp >= ?`);
+            queryParams.push(new Date(time));
+        }
+        
+        // Build WHERE clause
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+        
+        // Build ORDER BY clause
+        let orderBy = 'ORDER BY timestamp DESC';
+        if (sortField && sortDirection) {
+            orderBy = `ORDER BY ${sortField} ${sortDirection.toUpperCase()}`;
+        }
+        
+        // Get filtered data
+        const actionHistory = await ActionHistory.getFiltered(whereClause, queryParams, limit, offset);
+        const totalCount = await ActionHistory.getFilteredCount(whereClause, queryParams);
         const totalPages = Math.ceil(totalCount / limit);
         
         res.json({
@@ -25,6 +58,7 @@ router.get('/', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('Error fetching action history:', error);
         res.status(500).json({
             success: false,
             message: error.message

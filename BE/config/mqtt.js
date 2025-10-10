@@ -30,27 +30,27 @@ class MQTTClient {
         this.client = mqtt.connect(brokerUrl, options);
 
         this.client.on('connect', () => {
-            console.log('✅ MQTT Client connected to broker');
+            console.log('MQTT Client connected to broker');
             this.isConnected = true;
             this.subscribeToTopics();
         });
 
         this.client.on('error', (error) => {
-            console.error('❌ MQTT Client error:', error.message);
+            console.error('MQTT Client error:', error.message);
             this.isConnected = false;
         });
 
         this.client.on('close', () => {
-            console.log('⚠️ MQTT Client connection closed');
+            console.log('MQTT Client connection closed');
             this.isConnected = false;
         });
 
         this.client.on('reconnect', () => {
-            console.log('🔄 MQTT Client reconnecting...');
+            console.log('MQTT Client reconnecting...');
         });
 
         this.client.on('offline', () => {
-            console.log('📴 MQTT Client offline');
+            console.log('MQTT Client offline');
             this.isConnected = false;
         });
 
@@ -60,25 +60,25 @@ class MQTTClient {
     // Subscribe to all required topics
     subscribeToTopics() {
         if (!this.isConnected) {
-            console.error('❌ Cannot subscribe: MQTT client not connected');
+            console.error('Cannot subscribe: MQTT client not connected');
             return;
         }
 
         // Subscribe to sensor data topic
         this.client.subscribe(this.topics.sensorData, (error) => {
             if (error) {
-                console.error(`❌ Failed to subscribe to ${this.topics.sensorData}:`, error.message);
+                console.error(`Failed to subscribe to ${this.topics.sensorData}:`, error.message);
             } else {
-                console.log(`📡 Subscribed to ${this.topics.sensorData}`);
+                console.log(`Subscribed to ${this.topics.sensorData}`);
             }
         });
 
         // Subscribe to LED status topic
         this.client.subscribe(this.topics.ledStatus, (error) => {
             if (error) {
-                console.error(`❌ Failed to subscribe to ${this.topics.ledStatus}:`, error.message);
+                console.error(`Failed to subscribe to ${this.topics.ledStatus}:`, error.message);
             } else {
-                console.log(`📡 Subscribed to ${this.topics.ledStatus}`);
+                console.log(`Subscribed to ${this.topics.ledStatus}`);
             }
         });
 
@@ -91,8 +91,19 @@ class MQTTClient {
     // Handle incoming MQTT messages
     handleMessage(topic, message) {
         try {
-            const data = JSON.parse(message.toString());
-            console.log(`📨 Received message on ${topic}:`, data);
+            const messageStr = message.toString();
+            console.log(`Raw message on ${topic}:`, messageStr);
+
+            let data;
+            // Try to parse as JSON first, if fails treat as string
+            try {
+                data = JSON.parse(messageStr);
+            } catch (parseError) {
+                // If not JSON, treat as string (for LED status messages)
+                data = messageStr;
+            }
+
+            console.log(`Processed message on ${topic}:`, data);
 
             // Notify subscribers
             if (this.subscribers.has(topic)) {
@@ -101,12 +112,12 @@ class MQTTClient {
                     try {
                         callback(data, topic);
                     } catch (error) {
-                        console.error('❌ Error in MQTT message callback:', error.message);
+                        console.error('Error in MQTT message callback:', error.message);
                     }
                 });
             }
         } catch (error) {
-            console.error('❌ Error parsing MQTT message:', error.message);
+            console.error('Error processing MQTT message:', error.message);
         }
     }
 
@@ -121,9 +132,9 @@ class MQTTClient {
         if (this.isConnected) {
             this.client.subscribe(topic, (error) => {
                 if (error) {
-                    console.error(`❌ Failed to subscribe to ${topic}:`, error.message);
+                    console.error(`Failed to subscribe to ${topic}:`, error.message);
                 } else {
-                    console.log(`📡 Subscribed to ${topic}`);
+                    console.log(`Subscribed to ${topic}`);
                 }
             });
         }
@@ -150,7 +161,7 @@ class MQTTClient {
     // Publish message to a topic
     publish(topic, message, options = {}) {
         if (!this.isConnected) {
-            console.error('❌ Cannot publish: MQTT client not connected');
+            console.error('Cannot publish: MQTT client not connected');
             return false;
         }
 
@@ -158,9 +169,9 @@ class MQTTClient {
         
         this.client.publish(topic, messageStr, options, (error) => {
             if (error) {
-                console.error(`❌ Failed to publish to ${topic}:`, error.message);
+                console.error(`Failed to publish to ${topic}:`, error.message);
             } else {
-                console.log(`📤 Published to ${topic}:`, message);
+                console.log(`Published to ${topic}:`, message);
             }
         });
 
@@ -169,7 +180,9 @@ class MQTTClient {
 
     // Publish LED control command
     publishLedControl(command) {
-        return this.publish(this.topics.ledControl, command);
+        // ESP32 expects simple string commands like "led1on", "led2off", etc.
+        const commandStr = typeof command === 'string' ? command : JSON.stringify(command);
+        return this.publish(this.topics.ledControl, commandStr);
     }
 
     // Get connection status
@@ -187,7 +200,7 @@ class MQTTClient {
         if (this.client) {
             this.client.end();
             this.isConnected = false;
-            console.log('🔌 MQTT Client disconnected');
+            console.log('MQTT Client disconnected');
         }
     }
 }

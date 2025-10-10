@@ -17,6 +17,33 @@ class ActionHistory {
         }
     }
 
+    static async getFiltered(whereClause, queryParams, limit = 100, offset = 0) {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT * FROM action_history
+                ${whereClause}
+                ORDER BY timestamp DESC
+                LIMIT ${offset}, ${limit}
+            `, queryParams);
+            return rows;
+        } catch (error) {
+            throw new Error(`Error getting filtered action history: ${error.message}`);
+        }
+    }
+
+    static async getFilteredCount(whereClause, queryParams) {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT COUNT(*) as count
+                FROM action_history
+                ${whereClause}
+            `, queryParams);
+            return rows[0].count;
+        } catch (error) {
+            throw new Error(`Error getting filtered count: ${error.message}`);
+        }
+    }
+
     static async getById(id) {
         try {
             const [rows] = await pool.execute(

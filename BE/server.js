@@ -31,7 +31,11 @@ const server = http.createServer(app);
 
 // Middleware
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: [
+        process.env.FRONTEND_URL || "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3000"
+    ],
     credentials: true
 }));
 app.use(bodyParser.json());
@@ -70,7 +74,7 @@ app.use('/api/mqtt/led', ledStatusTopicRoutes);
 // LED Control API endpoint
 app.post('/api/led/control', async (req, res) => {
     try {
-        const { action, device_name = 'LED', description } = req.body;
+        const { action, device_name = 'LED1', description } = req.body;
 
         if (!action || !['on', 'off'].includes(action.toLowerCase())) {
             return res.status(400).json({
@@ -79,14 +83,23 @@ app.post('/api/led/control', async (req, res) => {
             });
         }
 
-        // Publish LED control command via MQTT
-        const command = {
-            action: action.toLowerCase(),
-            device_name,
-            timestamp: new Date().toISOString()
+        // Map device names to ESP32 commands
+        const deviceMap = {
+            'LED1': 'led1',
+            'LED2': 'led2', 
+            'LED3': 'led3',
+            'Fan': 'led1',      // Map Fan to LED1
+            'Air Conditioner': 'led2', // Map AC to LED2
+            'Light': 'led3'     // Map Light to LED3
         };
 
-        const published = mqttClient.publishLedControl(command);
+        const espCommand = deviceMap[device_name] || 'led1';
+        const mqttCommand = `${espCommand}${action.toLowerCase()}`;
+
+        console.log(`Sending MQTT command: ${mqttCommand}`);
+
+        // Publish LED control command via MQTT (ESP32 expects simple string commands)
+        const published = mqttClient.publishLedControl(mqttCommand);
         
         if (!published) {
             return res.status(503).json({
@@ -105,9 +118,11 @@ app.post('/api/led/control', async (req, res) => {
 
         res.json({
             success: true,
-            message: `LED control command sent: ${action}`,
+            message: `LED control command sent: ${mqttCommand}`,
             data: {
-                command,
+                command: mqttCommand,
+                device_name,
+                action: action.toLowerCase(),
                 actionHistoryId
             }
         });
@@ -144,6 +159,42 @@ app.get('/api/system/status', (req, res) => {
     });
 });
 
+// Test endpoint to add sample sensor data
+app.post('/api/test/sensor-data', async (req, res) => {
+    try {
+        const { temperature, humidity, light } = req.body;
+        
+        // Create sample sensor data
+        const sensorDataId = await SensorData.create(
+            temperature || Math.random() * 20 + 20, // Random temp between 20-40°C
+            humidity || Math.random() * 40 + 40,    // Random humidity between 40-80%
+            light || Math.random() * 500 + 200,     // Random light between 200-700 lux
+            new Date()
+        );
+
+        console.log('Test sensor data saved to database:', sensorDataId);
+
+        res.json({
+            success: true,
+            message: 'Test sensor data created successfully',
+            data: {
+                id: sensorDataId,
+                temperature: temperature || 'random',
+                humidity: humidity || 'random',
+                light: light || 'random',
+                timestamp: new Date().toISOString()
+            }
+        });
+
+    } catch (error) {
+        console.error('Error creating test sensor data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
 // 404 handler
 app.use('*', (req, res) => {
     res.status(404).json({
@@ -165,9 +216,19 @@ app.use((error, req, res, next) => {
 // MQTT message handlers
 const setupMQTTHandlers = () => {
     // Handle sensor data from MQTT
-    mqttClient.subscribe(mqttClient.getTopics().sensorData, async (data, topic) => {
+    mqttClient.subscribe(mqttClient.getTopics().sensorData, async (message, topic) => {
         try {
-            console.log('📊 Processing sensor data from MQTT:', data);
+            console.log('Raw MQTT message:', message);
+            
+            // Parse JSON message from ESP32
+            let data;
+            if (typeof message === 'string') {
+                data = JSON.parse(message);
+            } else {
+                data = message;
+            }
+            
+            console.log('Parsed sensor data:', data);
             
             // Save sensor data to database
             const sensorDataId = await SensorData.create(
@@ -177,7 +238,7 @@ const setupMQTTHandlers = () => {
                 data.timestamp || new Date()
             );
 
-            console.log('💾 Sensor data saved to database:', sensorDataId);
+            console.log('Sensor data saved to database:', sensorDataId);
 
             // Broadcast to WebSocket clients
             webSocketManager.broadcastSensorData({
@@ -186,34 +247,57 @@ const setupMQTTHandlers = () => {
             });
 
         } catch (error) {
-            console.error('❌ Error processing sensor data:', error);
+            console.error('Error processing sensor data:', error);
             webSocketManager.broadcastError(error);
         }
     });
 
     // Handle LED status from MQTT
-    mqttClient.subscribe(mqttClient.getTopics().ledStatus, async (data, topic) => {
+    mqttClient.subscribe(mqttClient.getTopics().ledStatus, async (message, topic) => {
         try {
-            console.log('💡 Processing LED status from MQTT:', data);
+            console.log('Raw LED status message:', message);
             
-            // Save action to history
-            const actionHistoryId = await ActionHistory.create(
-                data.device_name || 'LED',
-                data.status || data.action,
-                data.description || `LED status: ${data.status || data.action}`,
-                data.timestamp || new Date()
-            );
-
-            console.log('💾 LED status saved to database:', actionHistoryId);
+            // Parse LED status message from ESP32 (format: "led1:1,led2:0,led3:1")
+            let statusData = {};
+            if (typeof message === 'string') {
+                const parts = message.split(',');
+                parts.forEach(part => {
+                    const [led, value] = part.split(':');
+                    statusData[led.trim()] = parseInt(value.trim()) === 1;
+                });
+            } else {
+                statusData = message;
+            }
+            
+            console.log('Parsed LED status:', statusData);
+            
+            // Save action to history for each LED
+            const timestamp = new Date();
+            const promises = [];
+            
+            Object.keys(statusData).forEach(led => {
+                const isOn = statusData[led];
+                promises.push(
+                    ActionHistory.create(
+                        led.toUpperCase(),
+                        isOn ? 'on' : 'off',
+                        `${led.toUpperCase()} turned ${isOn ? 'on' : 'off'}`,
+                        timestamp
+                    )
+                );
+            });
+            
+            const actionHistoryIds = await Promise.all(promises);
+            console.log('LED status saved to database:', actionHistoryIds);
 
             // Broadcast to WebSocket clients
             webSocketManager.broadcastLedStatus({
-                id: actionHistoryId,
-                ...data
+                timestamp,
+                ...statusData
             });
 
         } catch (error) {
-            console.error('❌ Error processing LED status:', error);
+            console.error('Error processing LED status:', error);
             webSocketManager.broadcastError(error);
         }
     });
@@ -222,7 +306,7 @@ const setupMQTTHandlers = () => {
 // Initialize server
 const initializeServer = async () => {
     try {
-        console.log('🚀 Initializing IoT Backend Server...');
+        console.log('Initializing IoT Backend Server...');
 
         // Initialize database
         const dbInitialized = await initializeDatabase();
@@ -242,34 +326,34 @@ const initializeServer = async () => {
         // Start server
         const PORT = process.env.PORT || 5000;
         server.listen(PORT, () => {
-            console.log(`✅ Server running on port ${PORT}`);
-            console.log(`📡 WebSocket server ready`);
-            console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-            console.log(`📊 API base URL: http://localhost:${PORT}/api`);
+            console.log(`Server running on port ${PORT}`);
+            console.log(`WebSocket server ready`);
+            console.log(`Health check: http://localhost:${PORT}/health`);
+            console.log(`API base URL: http://localhost:${PORT}/api`);
         });
 
     } catch (error) {
-        console.error('❌ Failed to initialize server:', error);
+        console.error('Failed to initialize server:', error);
         process.exit(1);
     }
 };
 
 // Graceful shutdown
 const gracefulShutdown = () => {
-    console.log('🛑 Received shutdown signal, closing server gracefully...');
+    console.log('Received shutdown signal, closing server gracefully...');
     
     server.close(() => {
-        console.log('✅ HTTP server closed');
+        console.log('HTTP server closed');
         
         mqttClient.disconnect();
-        console.log('✅ MQTT client disconnected');
+        console.log('MQTT client disconnected');
         
         process.exit(0);
     });
 
     // Force close after 10 seconds
     setTimeout(() => {
-        console.error('❌ Could not close connections in time, forcefully shutting down');
+        console.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
     }, 10000);
 };
@@ -280,12 +364,12 @@ process.on('SIGINT', gracefulShutdown);
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
-    console.error('❌ Uncaught Exception:', error);
+    console.error('Uncaught Exception:', error);
     gracefulShutdown();
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     gracefulShutdown();
 });
 

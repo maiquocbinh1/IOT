@@ -23,6 +23,39 @@ class SensorData {
         }
     }
 
+    static async getFiltered(whereClause, queryParams, limit = 100, offset = 0) {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT 
+                    id,
+                    temperature,
+                    humidity,
+                    light,
+                    time
+                FROM sensor_data
+                ${whereClause}
+                ORDER BY time DESC
+                LIMIT ${offset}, ${limit}
+            `, queryParams);
+            return rows;
+        } catch (error) {
+            throw new Error(`Error getting filtered sensor data: ${error.message}`);
+        }
+    }
+
+    static async getFilteredCount(whereClause, queryParams) {
+        try {
+            const [rows] = await pool.execute(`
+                SELECT COUNT(*) as count
+                FROM sensor_data
+                ${whereClause}
+            `, queryParams);
+            return rows[0].count;
+        } catch (error) {
+            throw new Error(`Error getting filtered count: ${error.message}`);
+        }
+    }
+
     static async getById(id) {
         try {
             const [rows] = await pool.execute(`

@@ -12,8 +12,51 @@ router.get('/', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
         
-        const sensorData = await SensorData.getAll(limit, offset);
-        const totalCount = await SensorData.getTotalCount();
+        // Get filter parameters
+        const { search, temperature, humidity, light, time, sortField, sortDirection, filterType } = req.query;
+        
+        // Build filter conditions
+        let whereConditions = [];
+        let queryParams = [];
+        
+        if (search) {
+            // Exact match search instead of LIKE
+            whereConditions.push(`(id = ? OR temperature = ? OR humidity = ? OR light = ? OR time = ?)`);
+            queryParams.push(search, parseFloat(search) || search, parseInt(search) || search, parseInt(search) || search, search);
+        }
+        
+        if (temperature) {
+            whereConditions.push(`temperature >= ?`);
+            queryParams.push(parseFloat(temperature));
+        }
+        
+        if (humidity) {
+            whereConditions.push(`humidity >= ?`);
+            queryParams.push(parseInt(humidity));
+        }
+        
+        if (light) {
+            whereConditions.push(`light >= ?`);
+            queryParams.push(parseInt(light));
+        }
+        
+        if (time) {
+            whereConditions.push(`time >= ?`);
+            queryParams.push(new Date(time));
+        }
+        
+        // Build WHERE clause
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+        
+        // Build ORDER BY clause
+        let orderBy = 'ORDER BY time DESC';
+        if (sortField && sortDirection) {
+            orderBy = `ORDER BY ${sortField} ${sortDirection.toUpperCase()}`;
+        }
+        
+        // Get filtered data
+        const sensorData = await SensorData.getFiltered(whereClause, queryParams, limit, offset);
+        const totalCount = await SensorData.getFilteredCount(whereClause, queryParams);
         const totalPages = Math.ceil(totalCount / limit);
         
         res.json({
@@ -27,6 +70,7 @@ router.get('/', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error('Error fetching sensor data:', error);
         res.status(500).json({
             success: false,
             message: error.message

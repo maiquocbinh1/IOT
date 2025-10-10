@@ -1,27 +1,41 @@
 .sidebar {
   width: 250px;
-  min-width: 250px;
-  height: 100vh;
-  background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(180deg, #87CEEB 0%, #B0E0E6 100%);
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 40% 80%, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px, 30px 30px, 25px 25px;
   padding: 20px;
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  flex-shrink: 0;
 }
 
 .sidebar-header {
   margin-bottom: 40px;
-  padding: 20px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  padding: 15px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  position: relative;
 }
 
-.logo {
-  font-size: 2rem;
-  color: #28a745;
+.search-icon {
+  font-size: 1.2rem;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.search-line {
+  height: 2px;
+  background: repeating-linear-gradient(
+    to right,
+    #666 0px,
+    #666 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  border-radius: 1px;
 }
 
 .sidebar-nav {
@@ -37,12 +51,11 @@
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
-  background-color: transparent;
-  border: 1px solid transparent;
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .nav-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: rgba(255, 255, 255, 0.2);
   transform: translateX(5px);
 }
 
@@ -62,23 +75,5 @@
 .nav-text {
   font-size: 1.1rem;
   font-weight: 500;
-  color: #495057;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-  .sidebar {
-    width: 200px;
-    min-width: 200px;
-  }
-  
-  .nav-text {
-    font-size: 1rem;
-  }
-  
-  .nav-icon {
-    font-size: 1.2rem;
-    margin-right: 10px;
-    width: 25px;
-  }
+  color: #333;
 }

@@ -1,14 +1,12 @@
 /* Main Container */
 .profile-page {
-  flex: 1;
-  background: #f0f8ff;
-  padding: 15px 20px;
-  border-radius: 10px;
-  margin: 15px;
-  height: calc(100vh - 30px);
-  overflow: hidden;
+  padding: 1.5rem;
+  height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header */
@@ -218,4 +216,3 @@
   color: #0056b3;
   text-decoration: underline;
 }
-
