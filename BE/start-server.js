@@ -81,12 +81,9 @@ app.post('/api/led/control', async (req, res) => {
 
         // Map device names to ESP32 commands
         const deviceMap = {
-            'LED1': 'led1',
-            'LED2': 'led2', 
-            'LED3': 'led3',
-            'Fan': 'led1',      // Map Fan to LED1
-            'Air Conditioner': 'led2', // Map AC to LED2
-            'Light': 'led3'     // Map Light to LED3
+            'Fan': 'led1',
+            'Air Conditioner': 'led2', 
+            'Light': 'led3'
         };
 
         const espCommand = deviceMap[device_name] || 'led1';
@@ -104,13 +101,8 @@ app.post('/api/led/control', async (req, res) => {
             });
         }
 
-        // Map LED names back to device names for display
-        const displayNameMap = {
-            'LED1': 'Fan',
-            'LED2': 'Air Conditioner', 
-            'LED3': 'Light'
-        };
-        const displayName = displayNameMap[device_name] || device_name;
+        // Use device name directly for display
+        const displayName = device_name;
 
         // Save action to history
         const actionHistoryId = await ActionHistory.create(
@@ -275,17 +267,25 @@ const setupMQTTHandlers = () => {
             
             console.log('Parsed LED status:', statusData);
             
+            // Map LED names to device names
+            const deviceNameMap = {
+                'led1': 'Fan',
+                'led2': 'Air Conditioner',
+                'led3': 'Light'
+            };
+            
             // Save action to history for each LED
             const timestamp = new Date();
             const promises = [];
             
             Object.keys(statusData).forEach(led => {
                 const isOn = statusData[led];
+                const deviceName = deviceNameMap[led] || led.toUpperCase();
                 promises.push(
                     ActionHistory.create(
-                        led.toUpperCase(),
+                        deviceName,
                         isOn ? 'on' : 'off',
-                        `${led.toUpperCase()} turned ${isOn ? 'on' : 'off'}`,
+                        `${deviceName} turned ${isOn ? 'on' : 'off'}`,
                         timestamp
                     )
                 );
@@ -294,10 +294,16 @@ const setupMQTTHandlers = () => {
             const actionHistoryIds = await Promise.all(promises);
             console.log('LED status saved to database:', actionHistoryIds);
 
-            // Broadcast to WebSocket clients
+            // Broadcast to WebSocket clients with device names
+            const deviceStatusData = {};
+            Object.keys(statusData).forEach(led => {
+                const deviceName = deviceNameMap[led] || led;
+                deviceStatusData[deviceName] = statusData[led];
+            });
+            
             webSocketManager.broadcastLedStatus({
                 timestamp,
-                ...statusData
+                ...deviceStatusData
             });
 
         } catch (error) {

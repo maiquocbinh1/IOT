@@ -226,7 +226,6 @@ const DataSensor = () => {
     <div className="data-sensor-page">
       <div className="header">
         <h2>Data Sensor</h2>
-        <div className="bell">🔔</div>
       </div>
 
          <div className="search-bar">

@@ -30,7 +30,6 @@ const Profile = () => {
       {/* Header */}
       <div className="header">
         <h1 className="page-title">Profile</h1>
-        <div className="bell">🔔</div>
       </div>
       
       {/* Profile Content */}

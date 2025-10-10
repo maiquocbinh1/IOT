@@ -178,7 +178,6 @@ const ActionHistory = () => {
       {/* Header */}
       <div className="header">
         <h1 className="page-title">Action History</h1>
-        <div className="bell">🔔</div>
       </div>
       
       {/* Search and Filter Section */}

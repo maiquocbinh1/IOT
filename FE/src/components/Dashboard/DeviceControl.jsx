@@ -47,12 +47,12 @@ const DeviceControl = () => {
            const unsubscribeLEDStatus = webSocketService.on('ledStatus', (data) => {
              console.log('Received LED status update:', data);
              
-             // Map LED status to device states
+             // Map device status to device states
              setDevices(prev => ({
                ...prev,
-               fan: data.LED1 || data.led1 || false,
-               airConditioner: data.LED2 || data.led2 || false,
-               light: data.LED3 || data.led3 || false
+               fan: data.Fan || data.fan || false,
+               airConditioner: data['Air Conditioner'] || data.airConditioner || false,
+               light: data.Light || data.light || false
              }));
            });
 
@@ -80,22 +80,13 @@ const DeviceControl = () => {
 
       const newStatus = !devices[deviceName];
       
-             // Map device names to LED names for backend
-             const deviceMap = {
-               'fan': 'LED1',                    // Fan controls LED1
-               'airConditioner': 'LED2',         // Air Conditioner controls LED2  
-               'light': 'LED3'                   // Light controls LED3
-             };
-             
-             const deviceDisplayName = deviceMap[deviceName];
+             // Use device names directly for backend
+             const deviceDisplayName = deviceName === 'fan' ? 'Fan' : 
+                                     deviceName === 'airConditioner' ? 'Air Conditioner' : 
+                                     'Light';
              
              // Display names for user
-             const displayNames = {
-               'fan': 'Fan',
-               'airConditioner': 'Air Conditioner',
-               'light': 'Light'
-             };
-             const userDisplayName = displayNames[deviceName];
+             const userDisplayName = deviceDisplayName;
       
       // Update local state immediately for better UX
       setDevices(prev => ({

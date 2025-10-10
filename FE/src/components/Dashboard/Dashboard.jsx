@@ -9,7 +9,6 @@ const DashboardPage = () => {
     <div className="dashboard-page">
       <div className="header">
         <h1 className="page-title">Dashboard</h1>
-        <div className="bell">🔔</div>
       </div>
       
       <div className="dashboard-content">
