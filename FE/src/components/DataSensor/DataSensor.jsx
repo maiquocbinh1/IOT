@@ -8,6 +8,7 @@ const DataSensor = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
+  const [idSearch, setIdSearch] = useState("");
   
   // Individual search filters
   const [temperatureFilter, setTemperatureFilter] = useState("");
@@ -31,6 +32,29 @@ const DataSensor = () => {
     try {
       setLoading(true);
       setError(null);
+
+      // If ID search is provided, search by ID directly
+      if (idSearch.trim()) {
+        try {
+          const response = await apiService.getSensorDataById(parseInt(idSearch.trim()));
+          if (response.success && response.data) {
+            setSensorData([response.data]);
+            setTotalPages(1);
+            setTotalRecords(1);
+          } else {
+            setSensorData([]);
+            setTotalPages(0);
+            setTotalRecords(0);
+          }
+          return;
+        } catch (err) {
+          console.error('Error fetching by ID:', err);
+          setSensorData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          return;
+        }
+      }
 
       const params = {
         page: currentPage,
@@ -109,7 +133,7 @@ const DataSensor = () => {
   // Load data on component mount and when filters change
   useEffect(() => {
     fetchSensorData();
-  }, [currentPage, searchTerm, filterType, temperatureFilter, humidityFilter, lightFilter, timeFilter, sortField, sortDirection]);
+  }, [currentPage, searchTerm, filterType, temperatureFilter, humidityFilter, lightFilter, timeFilter, idSearch, sortField, sortDirection]);
 
   // Auto-refresh data every 10 seconds
   useEffect(() => {
@@ -132,6 +156,11 @@ const DataSensor = () => {
     }
   };
 
+  // Handle ID search change
+  const handleIdSearchChange = (e) => {
+    setIdSearch(e.target.value);
+  };
+
   // Clear all filters
   const clearFilters = () => {
     setSearchTerm("");
@@ -140,6 +169,7 @@ const DataSensor = () => {
     setHumidityFilter("");
     setLightFilter("");
     setTimeFilter("");
+    setIdSearch("");
     setSortField("");
     setSortDirection("asc");
     setCurrentPage(1);
@@ -242,6 +272,16 @@ const DataSensor = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
+           </div>
+
+           <div className="id-search-wrapper">
+             <span className="search-icon">#</span>
+             <input
+               type="number"
+               placeholder="Search by ID (e.g., 123)"
+               value={idSearch}
+               onChange={handleIdSearchChange}
+             />
            </div>
 
            <select

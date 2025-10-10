@@ -7,6 +7,7 @@ const ActionHistory = () => {
   const [filterType, setFilterType] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [timeSearch, setTimeSearch] = useState('');
+  const [idSearch, setIdSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [actionHistoryData, setActionHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,29 @@ const ActionHistory = () => {
     try {
       setLoading(true);
       setError(null);
+
+      // If ID search is provided, search by ID directly
+      if (idSearch.trim()) {
+        try {
+          const response = await apiService.getActionHistoryById(parseInt(idSearch.trim()));
+          if (response.success && response.data) {
+            setActionHistoryData([response.data]);
+            setTotalPages(1);
+            setTotalRecords(1);
+          } else {
+            setActionHistoryData([]);
+            setTotalPages(0);
+            setTotalRecords(0);
+          }
+          return;
+        } catch (err) {
+          console.error('Error fetching by ID:', err);
+          setActionHistoryData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          return;
+        }
+      }
 
       const params = {
         page: currentPage,
@@ -99,6 +123,10 @@ const ActionHistory = () => {
 
   const handleSearchTermChange = (e) => {
     setSearchTerm(e.target.value);
+  };
+
+  const handleIdSearchChange = (e) => {
+    setIdSearch(e.target.value);
   };
 
   // Pagination Component
@@ -195,6 +223,16 @@ const ActionHistory = () => {
             }
             value={searchTerm}
             onChange={handleSearchTermChange}
+          />
+        </div>
+        
+        <div className="id-search-wrapper">
+          <span className="search-icon">#</span>
+          <input
+            type="number"
+            placeholder="Search by ID (e.g., 123)"
+            value={idSearch}
+            onChange={handleIdSearchChange}
           />
         </div>
         

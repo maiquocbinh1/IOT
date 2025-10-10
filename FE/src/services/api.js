@@ -95,6 +95,10 @@ class ApiService {
         return this.get('/sensor-data/statistics', { startDate, endDate });
     }
 
+    async getSensorDataById(id) {
+        return this.get(`/sensor-data/${id}`);
+    }
+
     // Action History API
     async getActionHistory(params = {}) {
         const { page = 1, limit = 10, device, time, id } = params;
@@ -116,6 +120,10 @@ class ApiService {
         const params = { startDate, endDate };
         if (deviceName) params.deviceName = deviceName;
         return this.get('/action-history/date-range', params);
+    }
+
+    async getActionHistoryById(id) {
+        return this.get(`/action-history/${id}`);
     }
 
            // Device Control API
