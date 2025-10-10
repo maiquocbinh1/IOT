@@ -15,7 +15,7 @@ const Profile = () => {
 
   // Links
   const links = {
-    github: "https://github.com/maiquocbinh",
+    github: "https://github.com/maiquocbinh1/IOT.git",
     pdfReport: "https://example.com/report.pdf",
     postman: "https://documenter.postman.com/view/your-api-doc",
     swagger: "https://your-api.com/swagger"
