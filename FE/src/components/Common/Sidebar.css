@@ -20,22 +20,27 @@
   position: relative;
 }
 
-.search-icon {
-  font-size: 1.2rem;
+.menu-icon {
+  font-size: 1.5rem;
   color: #333;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: color 0.3s ease;
 }
 
-.search-line {
-  height: 2px;
-  background: repeating-linear-gradient(
-    to right,
-    #666 0px,
-    #666 8px,
-    transparent 8px,
-    transparent 16px
-  );
-  border-radius: 1px;
+.menu-icon:hover {
+  color: #007bff;
+}
+
+.menu-dots {
+  font-size: 1.2rem;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.menu-dots:hover {
+  color: #007bff;
 }
 
 .sidebar-nav {

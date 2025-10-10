@@ -5,8 +5,8 @@ const Sidebar = ({ activePage, onPageChange }) => {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <div className="search-icon">🔍</div>
-        <div className="search-line"></div>
+        <div className="menu-icon">☰</div>
+        <div className="menu-dots">⋮</div>
       </div>
       
       <nav className="sidebar-nav">
