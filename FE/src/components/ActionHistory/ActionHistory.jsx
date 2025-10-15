@@ -60,32 +60,47 @@ const ActionHistory = () => {
         setActionHistoryData(response.data || []);
         setTotalPages(response.pagination?.totalPages || 1);
         setTotalRecords(response.pagination?.totalCount || 0);
+        setError(null); // Clear any previous errors
       } else {
         setError(response.message || 'Failed to fetch action history');
-        // Use sample data as fallback
-        setActionHistoryData([
-          { id: 2051, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:24.000Z", description: "Sample data" },
-          { id: 2050, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:23.000Z", description: "Sample data" },
-          { id: 2049, device_name: "FAN", action: "ON", timestamp: "2025-10-10T03:08:22.000Z", description: "Sample data" },
-          { id: 2048, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:21.000Z", description: "Sample data" },
-          { id: 2047, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:20.000Z", description: "Sample data" },
-        ]);
-        setTotalPages(1);
-        setTotalRecords(5);
+        // Only use fallback data if no time search is active
+        if (!timeSearch) {
+          setActionHistoryData([
+            { id: 2051, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:24.000Z", description: "Sample data" },
+            { id: 2050, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:23.000Z", description: "Sample data" },
+            { id: 2049, device_name: "FAN", action: "ON", timestamp: "2025-10-10T03:08:22.000Z", description: "Sample data" },
+            { id: 2048, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:21.000Z", description: "Sample data" },
+            { id: 2047, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:20.000Z", description: "Sample data" },
+          ]);
+          setTotalPages(1);
+          setTotalRecords(5);
+        } else {
+          // If time search is active and no results, show empty
+          setActionHistoryData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+        }
       }
     } catch (err) {
       console.error('Error fetching action history:', err);
       setError('Failed to fetch action history');
-      // Use sample data as fallback
-      setActionHistoryData([
-        { id: "#2051", device: "AIR_CONDITIONER", action: "ON", time: "14:20:11 24/08/2025", status: "Success" },
-        { id: "#2050", device: "LED", action: "OFF", time: "14:05:47 24/08/2025", status: "Fail" },
-        { id: "#2049", device: "FAN", action: "ON", time: "13:59:02 24/08/2025", status: "Success" },
-        { id: "#2048", device: "AIR_CONDITIONER", action: "ON", time: "13:40:18 24/08/2025", status: "Success" },
-        { id: "#2047", device: "LED", action: "OFF", time: "13:10:55 24/08/2025", status: "Fail" },
-      ]);
-      setTotalPages(1);
-      setTotalRecords(5);
+      // Only use fallback data if no time search is active
+      if (!timeSearch) {
+        setActionHistoryData([
+          { id: "#2051", device: "AIR_CONDITIONER", action: "ON", time: "14:20:11 24/08/2025", status: "Success" },
+          { id: "#2050", device: "LED", action: "OFF", time: "14:05:47 24/08/2025", status: "Fail" },
+          { id: "#2049", device: "FAN", action: "ON", time: "13:59:02 24/08/2025", status: "Success" },
+          { id: "#2048", device: "AIR_CONDITIONER", action: "ON", time: "13:40:18 24/08/2025", status: "Success" },
+          { id: "#2047", device: "LED", action: "OFF", time: "13:10:55 24/08/2025", status: "Fail" },
+        ]);
+        setTotalPages(1);
+        setTotalRecords(5);
+      } else {
+        // If time search is active and error, show empty
+        setActionHistoryData([]);
+        setTotalPages(0);
+        setTotalRecords(0);
+      }
     } finally {
       setLoading(false);
     }
@@ -245,18 +260,37 @@ const ActionHistory = () => {
           </select>
         </div>
         
-        <div className="time-search">
+        {timeSearch && (
+          <button 
+            className="clear-time-btn"
+            onClick={() => {
+              setTimeSearch('');
+              fetchActionHistory();
+            }}
+          >
+            Clear Time
+          </button>
+        )}
+        
+      </div>
+
+      {/* Individual Search Filters */}
+      <div className="individual-filters">
+        <div className="filter-group">
+          <label>TIME RANGE:</label>
           <input
-            type="text"
-            placeholder="hh:mm:ss dd/mm/yyyy"
+            type="datetime-local"
+            placeholder="mm/dd/yyyy --:--"
             value={timeSearch}
             onChange={handleTimeSearchChange}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                fetchActionHistory();
+              }
+            }}
+            className="filter-input"
           />
         </div>
-        
-        <button className="search-btn" onClick={handleSearch}>
-          🔍 Search
-        </button>
       </div>
 
       {/* Action History Table */}
@@ -385,6 +419,7 @@ const ActionHistory = () => {
         </div>
         <span>Total: {totalPages} pages</span>
       </div>
+
     </div>
   );
 };

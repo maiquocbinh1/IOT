@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
         const offset = (page - 1) * limit;
         
         // Get filter parameters
-        const { search, temperature, humidity, light, time, sortField, sortDirection, filterType } = req.query;
+        const { search, temperature, humidity, light, time, timeStart, timeEnd, sortField, sortDirection, filterType } = req.query;
         
         // Build filter conditions
         let whereConditions = [];
@@ -43,6 +43,16 @@ router.get('/', async (req, res) => {
         if (time) {
             whereConditions.push(`time >= ?`);
             queryParams.push(new Date(time));
+        }
+        
+        if (timeStart) {
+            whereConditions.push(`time >= ?`);
+            queryParams.push(new Date(timeStart));
+        }
+        
+        if (timeEnd) {
+            whereConditions.push(`time <= ?`);
+            queryParams.push(new Date(timeEnd));
         }
         
         // Build WHERE clause

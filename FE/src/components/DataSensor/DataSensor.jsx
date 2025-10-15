@@ -7,14 +7,17 @@ const DataSensor = () => {
   // State Management
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
+  const [timeSearch, setTimeSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [idSearch, setIdSearch] = useState("");
   
-  // Individual search filters
-  const [temperatureFilter, setTemperatureFilter] = useState("");
-  const [humidityFilter, setHumidityFilter] = useState("");
-  const [lightFilter, setLightFilter] = useState("");
-  const [timeFilter, setTimeFilter] = useState("");
+  // Modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newSensor, setNewSensor] = useState({
+    temperature: '',
+    humidity: '',
+    light: '',
+    datetime: ''
+  });
   
   // Sort state
   const [sortField, setSortField] = useState("");
@@ -33,10 +36,10 @@ const DataSensor = () => {
       setLoading(true);
       setError(null);
 
-      // If ID search is provided, search by ID directly
-      if (idSearch.trim()) {
+      // Check if search term is a number (ID search)
+      if (searchTerm.trim() && !isNaN(searchTerm.trim())) {
         try {
-          const response = await apiService.getSensorDataById(parseInt(idSearch.trim()));
+          const response = await apiService.getSensorDataById(parseInt(searchTerm.trim()));
           if (response.success && response.data) {
             setSensorData([response.data]);
             setTotalPages(1);
@@ -61,13 +64,52 @@ const DataSensor = () => {
         limit: 10,
         search: searchTerm,
         filterType: filterType,
-        temperature: temperatureFilter,
-        humidity: humidityFilter,
-        light: lightFilter,
-        time: timeFilter,
         sortField: sortField,
         sortDirection: sortDirection
       };
+
+      // Add time range parameters if timeSearch is provided and valid
+      if (timeSearch) {
+        const timeValue = new Date(timeSearch);
+        const now = new Date();
+        
+        // Check if the date is valid
+        if (isNaN(timeValue.getTime())) {
+          // Invalid date, show empty results
+          setSensorData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        // Check if the date is in the future (not valid for sensor data)
+        if (timeValue > now) {
+          // Future date, show empty results
+          setSensorData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        // Check if the date is too far in the past (before 2020)
+        const minDate = new Date('2020-01-01');
+        if (timeValue < minDate) {
+          // Too old date, show empty results
+          setSensorData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        params.timeStart = timeSearch;
+        params.timeEnd = timeSearch;
+      }
 
       // Apply specific field filtering
       if (filterType !== 'All' && searchTerm) {
@@ -81,14 +123,6 @@ const DataSensor = () => {
           params.light = searchTerm;
         }
       }
-      
-      // Clear individual filters when using general search
-      if (filterType === 'All' && searchTerm) {
-        params.temperature = undefined;
-        params.humidity = undefined;
-        params.light = undefined;
-        params.time = undefined;
-      }
 
       const response = await apiService.getSensorData(params);
       
@@ -99,9 +133,32 @@ const DataSensor = () => {
         setTotalPages(response.pagination?.totalPages || 1);
         setTotalRecords(response.pagination?.totalCount || 0);
         console.log('Pagination:', response.pagination);
+        setError(null); // Clear any previous errors
       } else {
         setError(response.message || 'Failed to fetch sensor data');
-        // Use sample data as fallback
+        // Only use fallback data if no time search is active
+        if (!timeSearch) {
+          setSensorData([
+            { id: "#1024", temperature: 22.4, humidity: 48, light: 720, time: "2025-08-24 09:15" },
+            { id: "#1023", temperature: 22.1, humidity: 49, light: 680, time: "2025-08-24 09:00" },
+            { id: "#1022", temperature: 21.9, humidity: 50, light: 640, time: "2025-08-24 08:45" },
+            { id: "#1021", temperature: 21.7, humidity: 50, light: 610, time: "2025-08-24 08:30" },
+            { id: "#1020", temperature: 21.6, humidity: 51, light: 580, time: "2025-08-24 08:15" },
+          ]);
+          setTotalPages(1);
+          setTotalRecords(5);
+        } else {
+          // If time search is active and no results, show empty
+          setSensorData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching sensor data:', err);
+      setError('Failed to fetch sensor data');
+      // Only use fallback data if no time search is active
+      if (!timeSearch) {
         setSensorData([
           { id: "#1024", temperature: 22.4, humidity: 48, light: 720, time: "2025-08-24 09:15" },
           { id: "#1023", temperature: 22.1, humidity: 49, light: 680, time: "2025-08-24 09:00" },
@@ -111,20 +168,12 @@ const DataSensor = () => {
         ]);
         setTotalPages(1);
         setTotalRecords(5);
+      } else {
+        // If time search is active and error, show empty
+        setSensorData([]);
+        setTotalPages(0);
+        setTotalRecords(0);
       }
-    } catch (err) {
-      console.error('Error fetching sensor data:', err);
-      setError('Failed to fetch sensor data');
-      // Use sample data as fallback
-      setSensorData([
-        { id: "#1024", temperature: 22.4, humidity: 48, light: 720, time: "2025-08-24 09:15" },
-        { id: "#1023", temperature: 22.1, humidity: 49, light: 680, time: "2025-08-24 09:00" },
-        { id: "#1022", temperature: 21.9, humidity: 50, light: 640, time: "2025-08-24 08:45" },
-        { id: "#1021", temperature: 21.7, humidity: 50, light: 610, time: "2025-08-24 08:30" },
-        { id: "#1020", temperature: 21.6, humidity: 51, light: 580, time: "2025-08-24 08:15" },
-      ]);
-      setTotalPages(1);
-      setTotalRecords(5);
     } finally {
       setLoading(false);
     }
@@ -133,7 +182,7 @@ const DataSensor = () => {
   // Load data on component mount and when filters change
   useEffect(() => {
     fetchSensorData();
-  }, [currentPage, searchTerm, filterType, temperatureFilter, humidityFilter, lightFilter, timeFilter, idSearch, sortField, sortDirection]);
+  }, [currentPage, searchTerm, filterType, timeSearch, sortField, sortDirection]);
 
   // Auto-refresh data every 10 seconds
   useEffect(() => {
@@ -177,8 +226,45 @@ const DataSensor = () => {
 
   // Handle add sensor
   const handleAddSensor = () => {
-    console.log('Add new sensor');
-    // TODO: Open modal or navigate to add sensor page
+    setShowAddModal(true);
+  };
+
+  // Handle modal close
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setNewSensor({
+      temperature: '',
+      humidity: '',
+      light: '',
+      datetime: ''
+    });
+  };
+
+  // Handle form input change
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewSensor(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle form submit
+  const handleSubmitSensor = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const response = await apiService.post('/sensor-data', newSensor);
+      if (response.success) {
+        console.log('Sensor added successfully:', response);
+        handleCloseModal();
+        fetchSensorData(); // Refresh data
+      }
+    } catch (error) {
+      console.error('Error adding sensor:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderPagination = () => {
@@ -254,104 +340,79 @@ const DataSensor = () => {
 
   return (
     <div className="data-sensor-page">
+      {/* Header */}
       <div className="header">
-        <h2>Data Sensor</h2>
+        <h1 className="page-title">Data Sensor</h1>
       </div>
 
-         <div className="search-bar">
-           <div className="search-wrapper">
-             <span className="search-icon">🔍</span>
-                <input
-                  type="text"
-                  placeholder={
-                    filterType === 'Temperature' ? 'Enter exact temperature value (e.g., 34.5)' :
-                    filterType === 'Humidity' ? 'Enter exact humidity value (e.g., 57)' :
-                    filterType === 'Light' ? 'Enter exact light value (e.g., 200)' :
-                    'Search exact values: ID, Temperature, Humidity, Light, or Time'
-                  }
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-           </div>
+      {/* Search and Filter Section */}
+      <div className="search-bar">
+        <div className="search-wrapper">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            placeholder={
+              filterType === 'Temperature' ? 'Enter exact temperature value (e.g., 34.5)' :
+              filterType === 'Humidity' ? 'Enter exact humidity value (e.g., 57)' :
+              filterType === 'Light' ? 'Enter exact light value (e.g., 200)' :
+              'Search by ID (number) or exact values: Temperature, Humidity, Light, Time'
+            }
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                fetchSensorData();
+              }
+            }}
+          />
+        </div>
+        
+        <select
+          value={filterType}
+          onChange={(e) => {
+            setFilterType(e.target.value);
+            setSearchTerm(''); // Clear search term when changing filter type
+          }}
+          className="filter"
+        >
+          <option>All</option>
+          <option>Temperature</option>
+          <option>Humidity</option>
+          <option>Light</option>
+        </select>
+        
+        <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
+        {timeSearch && (
+          <button 
+            className="clear-time-btn"
+            onClick={() => {
+              setTimeSearch('');
+              fetchSensorData();
+            }}
+          >
+            Clear Time Filter
+          </button>
+        )}
+      </div>
 
-           <div className="id-search-wrapper">
-             <span className="search-icon">#</span>
-             <input
-               type="number"
-               placeholder="Search by ID (e.g., 123)"
-               value={idSearch}
-               onChange={handleIdSearchChange}
-             />
-           </div>
-
-           <select
-             value={filterType}
-             onChange={(e) => {
-               setFilterType(e.target.value);
-               setSearchTerm(''); // Clear search term when changing filter type
-               // Clear individual filters when changing filter type
-               setTemperatureFilter('');
-               setHumidityFilter('');
-               setLightFilter('');
-               setTimeFilter('');
-             }}
-             className="filter"
-           >
-             <option>All</option>
-             <option>Temperature</option>
-             <option>Humidity</option>
-             <option>Light</option>
-           </select>
-
-           <button className="search-btn" onClick={fetchSensorData}>Search</button>
-           <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
-         </div>
-
-         {/* Individual Search Filters */}
-         <div className="individual-filters">
-           <div className="filter-group">
-             <label>Temperature (°C):</label>
-             <input
-               type="number"
-               placeholder="Min value"
-               value={temperatureFilter}
-               onChange={(e) => setTemperatureFilter(e.target.value)}
-               className="filter-input"
-             />
-           </div>
-           
-           <div className="filter-group">
-             <label>Humidity (%):</label>
-             <input
-               type="number"
-               placeholder="Min value"
-               value={humidityFilter}
-               onChange={(e) => setHumidityFilter(e.target.value)}
-               className="filter-input"
-             />
-           </div>
-           
-           <div className="filter-group">
-             <label>Light (nits):</label>
-             <input
-               type="number"
-               placeholder="Min value"
-               value={lightFilter}
-               onChange={(e) => setLightFilter(e.target.value)}
-               className="filter-input"
-             />
-           </div>
-           
-           <div className="filter-group">
-             <label>Time Range:</label>
-             <input
-               type="datetime-local"
-               value={timeFilter}
-               onChange={(e) => setTimeFilter(e.target.value)}
-               className="filter-input"
-             />
-           </div>
-         </div>
+      {/* Individual Search Filters */}
+      <div className="individual-filters">
+        <div className="filter-group">
+          <label>Time Range:</label>
+          <input
+            type="datetime-local"
+            placeholder="mm/dd/yyyy --:--"
+            value={timeSearch}
+            onChange={(e) => setTimeSearch(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                fetchSensorData();
+              }
+            }}
+            className="filter-input"
+          />
+        </div>
+      </div>
 
         <div className="table-container">
           {loading ? (
@@ -407,6 +468,14 @@ const DataSensor = () => {
                         </span>
                       </th>
                     )}
+                    {filterType === 'All' && (
+                      <th onClick={() => handleSort('timeRange')} className="sortable-header">
+                        Time Range 
+                        <span className="arrow">
+                          {sortField === 'timeRange' ? (sortDirection === 'asc' ? '↑' : '↓') : '↑↓'}
+                        </span>
+                      </th>
+                    )}
                     {filterType === 'Temperature' && (
                       <th onClick={() => handleSort('temperature')} className="sortable-header">
                         Temperature (°C) 
@@ -420,6 +489,14 @@ const DataSensor = () => {
                         Time 
                         <span className="arrow">
                           {sortField === 'time' ? (sortDirection === 'asc' ? '↑' : '↓') : '↑↓'}
+                        </span>
+                      </th>
+                    )}
+                    {filterType === 'Temperature' && (
+                      <th onClick={() => handleSort('timeRange')} className="sortable-header">
+                        Time Range 
+                        <span className="arrow">
+                          {sortField === 'timeRange' ? (sortDirection === 'asc' ? '↑' : '↓') : '↑↓'}
                         </span>
                       </th>
                     )}
@@ -439,6 +516,14 @@ const DataSensor = () => {
                         </span>
                       </th>
                     )}
+                    {filterType === 'Humidity' && (
+                      <th onClick={() => handleSort('timeRange')} className="sortable-header">
+                        Time Range 
+                        <span className="arrow">
+                          {sortField === 'timeRange' ? (sortDirection === 'asc' ? '↑' : '↓') : '↑↓'}
+                        </span>
+                      </th>
+                    )}
                     {filterType === 'Light' && (
                       <th onClick={() => handleSort('light')} className="sortable-header">
                         Light (nits) 
@@ -455,6 +540,14 @@ const DataSensor = () => {
                         </span>
                       </th>
                     )}
+                    {filterType === 'Light' && (
+                      <th onClick={() => handleSort('timeRange')} className="sortable-header">
+                        Time Range 
+                        <span className="arrow">
+                          {sortField === 'timeRange' ? (sortDirection === 'asc' ? '↑' : '↓') : '↑↓'}
+                        </span>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -466,17 +559,21 @@ const DataSensor = () => {
                         {filterType === 'All' && <td>{row.humidity}</td>}
                         {filterType === 'All' && <td>{row.light}</td>}
                         {filterType === 'All' && <td>{new Date(row.time).toLocaleString('vi-VN')}</td>}
+                        {filterType === 'All' && <td>{new Date(row.time).toLocaleDateString('vi-VN')}</td>}
                         {filterType === 'Temperature' && <td>{row.temperature}</td>}
                         {filterType === 'Temperature' && <td>{new Date(row.time).toLocaleString('vi-VN')}</td>}
+                        {filterType === 'Temperature' && <td>{new Date(row.time).toLocaleDateString('vi-VN')}</td>}
                         {filterType === 'Humidity' && <td>{row.humidity}</td>}
                         {filterType === 'Humidity' && <td>{new Date(row.time).toLocaleString('vi-VN')}</td>}
+                        {filterType === 'Humidity' && <td>{new Date(row.time).toLocaleDateString('vi-VN')}</td>}
                         {filterType === 'Light' && <td>{row.light}</td>}
                         {filterType === 'Light' && <td>{new Date(row.time).toLocaleString('vi-VN')}</td>}
+                        {filterType === 'Light' && <td>{new Date(row.time).toLocaleDateString('vi-VN')}</td>}
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={filterType === 'All' ? "5" : "3"} className="no-data">
+                      <td colSpan={filterType === 'All' ? "6" : "4"} className="no-data">
                         <div className="no-data-message">
                           <p>🔍 Không tìm thấy kết quả nào</p>
                           <p>Thử thay đổi điều kiện lọc hoặc tìm kiếm</p>
@@ -509,6 +606,70 @@ const DataSensor = () => {
           </div>
           <span>Total: {totalRecords} records</span>
          </div>
+
+
+         {/* Add Sensor Modal */}
+         {showAddModal && (
+           <div className="modal-overlay">
+             <div className="modal-content">
+               <div className="modal-header">
+                 <h3>Add New Sensor Data</h3>
+                 <button className="modal-close" onClick={handleCloseModal}>×</button>
+               </div>
+               <form onSubmit={handleSubmitSensor} className="modal-form">
+                 <div className="form-group">
+                   <label>Temperature (°C):</label>
+                   <input
+                     type="number"
+                     step="0.1"
+                     name="temperature"
+                     value={newSensor.temperature}
+                     onChange={handleInputChange}
+                     required
+                   />
+                 </div>
+                 <div className="form-group">
+                   <label>Humidity (%):</label>
+                   <input
+                     type="number"
+                     name="humidity"
+                     value={newSensor.humidity}
+                     onChange={handleInputChange}
+                     required
+                   />
+                 </div>
+                 <div className="form-group">
+                   <label>Light (nits):</label>
+                   <input
+                     type="number"
+                     name="light"
+                     value={newSensor.light}
+                     onChange={handleInputChange}
+                     required
+                   />
+                 </div>
+                 <div className="form-group">
+                   <label>Date & Time:</label>
+                   <input
+                     type="datetime-local"
+                     name="datetime"
+                     value={newSensor.datetime}
+                     onChange={handleInputChange}
+                     required
+                   />
+                 </div>
+                 <div className="modal-actions">
+                   <button type="button" onClick={handleCloseModal} className="btn-cancel">
+                     Cancel
+                   </button>
+                   <button type="submit" className="btn-submit">
+                     Add Sensor
+                   </button>
+                 </div>
+               </form>
+             </div>
+           </div>
+         )}
      </div>
   );
 };
