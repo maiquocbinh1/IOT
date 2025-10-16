@@ -9,7 +9,7 @@ const { initializeDatabase, getConnection } = require('./config/database');
 // Create Express app
 const app = express();
 
-// Lấy kết nối database
+// connect database
 const connection = getConnection();
 
 // Middleware
@@ -37,7 +37,7 @@ app.use((req, res, next) => {
 app.get('/api/sensor-data', (req, res) => {
     const query = `
         SELECT temperature, humidity, light
-        FROM stream_data
+        FROM sensor_data
         ORDER BY time DESC
         LIMIT 1
     `;
@@ -62,7 +62,7 @@ app.post('/api/control', (req, res) => {
     }
 
     const query = `
-        INSERT INTO device_history (device_name, action, timestamp, description)
+        INSERT INTO action_history (device_name, action, timestamp, description)
         VALUES (?, ?, NOW(), ?)
     `;
     const description = `Turned ${action.toLowerCase()} the ${deviceName}`;
@@ -86,8 +86,8 @@ app.get('/api/data/history', (req, res) => {
     const sortColumn   = req.query.sortColumn;
     const sortDirection= req.query.sortDirection || 'asc';
 
-    let baseQuery   = 'SELECT id, temperature, light, humidity, time FROM stream_data';
-    let countQuery  = 'SELECT COUNT(*) as total FROM stream_data';
+    let baseQuery   = 'SELECT id, temperature, light, humidity, time FROM sensor_data';
+    let countQuery  = 'SELECT COUNT(*) as total FROM sensor_data';
     let whereClause = '';
     let params      = [];
 
@@ -144,8 +144,8 @@ app.get('/api/actions/history', (req, res) => {
     const sortColumn   = req.query.sortColumn   || 'timestamp';
     const sortDirection= req.query.sortDirection|| 'desc';
 
-    let baseQuery   = 'SELECT id, device_name, action, timestamp FROM device_history';
-    let countQuery  = 'SELECT COUNT(*) as total FROM device_history';
+    let baseQuery   = 'SELECT id, device_name, action, timestamp FROM action_history';
+    let countQuery  = 'SELECT COUNT(*) as total FROM action_history';
     let whereClause = '';
     let params      = [];
 

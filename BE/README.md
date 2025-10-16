@@ -172,8 +172,8 @@ GET /api/actions/history?page=1&limit=5&filterType=timestamp&searchQuery=2024-01
 
 ### Tables cần thiết:
 
-1. **stream_data** - Dữ liệu cảm biến (nhiệt độ, độ ẩm, ánh sáng)
-2. **device_history** - Lịch sử hành động điều khiển
+1. **sensor_data** - Dữ liệu cảm biến (nhiệt độ, độ ẩm, ánh sáng)
+2. **action_history** - Lịch sử hành động điều khiển
 
 ## Testing
 
