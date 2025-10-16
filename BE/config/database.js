@@ -23,11 +23,11 @@ const promisePool = pool.promise();
 const testConnection = async () => {
     try {
         const connection = await promisePool.getConnection();
-        console.log('✅ Database connected successfully');
+        console.log('Database connected successfully');
         connection.release();
         return true;
     } catch (error) {
-        console.error('❌ Database connection failed:', error.message);
+        console.error('Database connection failed:', error.message);
         return false;
     }
 };
@@ -41,16 +41,22 @@ const initializeDatabase = async () => {
             throw new Error('Cannot connect to database');
         }
         
-        console.log('🚀 Database initialized successfully');
+        console.log('Database initialized successfully');
         return true;
     } catch (error) {
-        console.error('❌ Database initialization failed:', error.message);
+        console.error('Database initialization failed:', error.message);
         return false;
     }
+};
+
+// Get connection for simple queries
+const getConnection = () => {
+    return pool;
 };
 
 module.exports = {
     pool: promisePool,
     testConnection,
-    initializeDatabase
+    initializeDatabase,
+    getConnection
 };
