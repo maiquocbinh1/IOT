@@ -1,6 +1,6 @@
 /* Main Container */
 .action-history-page {
-  padding: 1.5rem;
+  padding: 0.5rem;
   height: 100vh;
   width: 100%;
   display: flex;
@@ -141,6 +141,8 @@
   min-height: 0;
   width: 100%;
   display: block;
+  padding: 0;
+  margin: 0;
 }
 
 .action-table {
@@ -154,17 +156,35 @@
 }
 
 .action-table th {
-  background: #fff3cd;
+  background: #FFF7D6;
   color: #333;
   font-weight: 600;
-  padding: 12px;
-  text-align: left;
+  padding: 10px 16px;
+  text-align: center;
   border-bottom: 1px solid #ddd;
+  font-size: 15px;
+  line-height: 1.8;
+  border-radius: 8px 8px 0 0;
+}
+
+/* Sortable headers */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.sortable-header:hover {
+  background-color: #f0f0f0;
 }
 
 .action-table td {
-  padding: 12px;
+  padding: 10px 16px;
   border-bottom: 1px solid #f0f0f0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.8;
+  border-radius: 4px;
 }
 
 .action-table tbody tr:nth-child(even) {
@@ -175,37 +195,51 @@
   background-color: #ffffff;
 }
 
+.action-table tbody tr:hover {
+  background-color: #FAFAFA;
+  transition: background-color 0.2s ease;
+}
+
 /* Table Cells */
 .id-badge {
   background: #d4edda;
   color: #155724;
   padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 600;
   border: 1px solid #c3e6cb;
+  display: inline-block;
+  text-align: center;
+  min-width: 50px;
 }
 
 .device-cell {
   font-weight: 500;
   color: #333;
+  text-align: center;
 }
 
 .action-cell {
   font-weight: 500;
   color: #333;
+  text-align: center;
 }
 
 .time-cell {
   font-family: monospace;
   color: #666;
+  text-align: center;
 }
 
 .status-badge {
   padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 600;
+  display: inline-block;
+  text-align: center;
+  min-width: 60px;
 }
 
 .status-badge.success {

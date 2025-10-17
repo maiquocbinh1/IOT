@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = 'http://localhost:5000/api';
 
 // API Service class
 class ApiService {
@@ -61,144 +61,63 @@ class ApiService {
         return this.request(endpoint, { method: 'DELETE' });
     }
 
-    // Sensor Data API
+    // Sensor Data API - Updated to match backend
+    async getLatestSensorData() {
+        return this.get('/sensor-data');
+    }
+
     async getSensorData(params = {}) {
-        const { page = 1, limit = 10, sortField, sortDirection, search, temperature, humidity, light, time } = params;
+        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection } = params;
         const queryParams = {
             page,
             limit,
-            ...(sortField && { sortField }),
-            ...(sortDirection && { sortDirection }),
-            ...(search && { search }),
-            ...(temperature && { temperature }),
-            ...(humidity && { humidity }),
-            ...(light && { light }),
-            ...(time && { time })
+            ...(filterType && { filterType }),
+            ...(searchQuery && { searchQuery }),
+            ...(sortColumn && { sortColumn }),
+            ...(sortDirection && { sortDirection })
         };
-        return this.get('/sensor-data', queryParams);
-    }
-
-    async getLatestSensorData() {
-        return this.get('/sensor-data/latest/all');
+        return this.get('/data', queryParams);
     }
 
     async getSensorHistory(params = {}) {
-        const { limit = 7, sort = 'desc' } = params;
-        return this.get('/sensor-data', { limit, page: 1 });
+        const { limit = 5, page = 1 } = params;
+        return this.get('/data', { limit, page });
     }
 
-    async getSensorDataByDateRange(startDate, endDate) {
-        return this.get('/sensor-data/date-range', { startDate, endDate });
-    }
-
-    async getSensorStatistics(startDate, endDate) {
-        return this.get('/sensor-data/statistics', { startDate, endDate });
-    }
-
-    async getSensorDataById(id) {
-        return this.get(`/sensor-data/${id}`);
-    }
-
-    // Action History API
+    // Action History API - Updated to match backend
     async getActionHistory(params = {}) {
-        const { page = 1, limit = 10, device, time, id } = params;
+        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection } = params;
         const queryParams = {
             page,
             limit,
-            ...(device && { device }),
-            ...(time && { time }),
-            ...(id && { id })
+            ...(filterType && { filterType }),
+            ...(searchQuery && { searchQuery }),
+            ...(sortColumn && { sortColumn }),
+            ...(sortDirection && { sortDirection })
         };
-        return this.get('/action-history', queryParams);
+        return this.get('/actions/history', queryParams);
     }
 
-    async getActionHistoryByDevice(deviceName, limit = 100, offset = 0) {
-        return this.get('/action-history/device', { deviceName, limit, offset });
-    }
-
-    async getActionHistoryByDateRange(startDate, endDate, deviceName = null) {
-        const params = { startDate, endDate };
-        if (deviceName) params.deviceName = deviceName;
-        return this.get('/action-history/date-range', params);
-    }
-
-    async getActionHistoryById(id) {
-        return this.get(`/action-history/${id}`);
-    }
-
-           // Device Control API
-           async getDeviceStatus() {
-               // Check MQTT control status
-               return this.get('/mqtt/led/control/status');
-           }
-
-           async controlDevice(deviceName, action) {
-               return this.post('/led/control', {
-                   action: action,
-                   device_name: deviceName
-               });
-           }
-
-    // LED Control API
-    async controlLED(action, deviceName = 'LED', description = null) {
-        return this.post('/led/control', {
-            action,
-            device_name: deviceName,
-            description
+    // Device Control API - Updated to match backend
+    async controlDevice(deviceName, action) {
+        return this.post('/control', {
+            deviceName: deviceName,
+            action: action
         });
     }
 
-    // System Status API
-    async getSystemStatus() {
-        return this.get('/system/status');
-    }
-
-    async getHealthStatus() {
-        return this.get('/health');
-    }
-
-    // MQTT Sensor Data API
-    async getMQTTSensorData(limit = 100, offset = 0) {
-        return this.get('/mqtt/sensor-data', { limit, offset });
-    }
-
-    async getLatestMQTTSensorData() {
-        return this.get('/mqtt/sensor-data/latest');
-    }
-
-    async simulateSensorData(sensorData) {
-        return this.post('/mqtt/sensor-data/simulate', sensorData);
-    }
-
-    // MQTT LED Control API
-    async publishLEDControl(action, deviceName = 'LED', description = null) {
-        return this.post('/mqtt/led/control', {
-            action,
-            device_name: deviceName,
-            description
+    async controlLED(action, deviceName = 'led1') {
+        return this.post('/control', {
+            deviceName: deviceName,
+            action: action
         });
     }
 
-    async getLEDControlHistory(limit = 100, offset = 0) {
-        return this.get('/mqtt/led/control/history', { limit, offset });
+    // Connection Status API
+    async getConnectionStatus() {
+        return this.get('/connection-status');
     }
 
-    // MQTT LED Status API
-    async getLEDStatus() {
-        return this.get('/mqtt/led/status');
-    }
-
-    async getLEDStatusHistory(limit = 100, offset = 0) {
-        return this.get('/mqtt/led/status/history', { limit, offset });
-    }
-
-    async simulateLEDStatus(deviceName, status, description) {
-        return this.post('/mqtt/led/status/simulate', {
-            device_name: deviceName,
-            status,
-            description
-        });
-    }
 }
 
 // Create and export API instance
@@ -210,22 +129,7 @@ export const {
     getSensorData,
     getLatestSensorData,
     getSensorHistory,
-    getSensorDataByDateRange,
-    getSensorStatistics,
     getActionHistory,
-    getActionHistoryByDevice,
-    getActionHistoryByDateRange,
-    getDeviceStatus,
     controlDevice,
-    controlLED,
-    getSystemStatus,
-    getHealthStatus,
-    getMQTTSensorData,
-    getLatestMQTTSensorData,
-    simulateSensorData,
-    publishLEDControl,
-    getLEDControlHistory,
-    getLEDStatus,
-    getLEDStatusHistory,
-    simulateLEDStatus
+    controlLED
 } = apiService;

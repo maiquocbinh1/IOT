@@ -1,261 +1,383 @@
+// server.js
+// IoT Backend: API + MQTT + MySQL + WebSocket (NO SWAGGER, NO ICON)
+
 const express = require('express');
 const cors = require('cors');
-const bodyParser = require('body-parser');
+const http = require('http');
+const { WebSocketServer, WebSocket } = require('ws');
+const mqtt = require('mqtt');
 require('dotenv').config();
 
-// Import configurations
-const { initializeDatabase, getConnection } = require('./config/database');
+const { initializeDatabase, getConnection, pool } = require('./config/database');
 
-// Create Express app
 const app = express();
+const port = process.env.PORT || 5000;
 
-// connect database
-const connection = getConnection();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
-// Middleware
+let isMqttConnected = false;
+let isEsp32DataConnected = false;
+let lastDataTimestamp = 0;
+const DATA_TIMEOUT = 10000;
+
+wss.on('connection', (ws) => {
+  console.log('New WebSocket client connected');
+  ws.send(JSON.stringify({ type: 'MQTT_STATUS', isConnected: isMqttConnected }));
+  ws.send(JSON.stringify({ type: 'DATA_STATUS', isConnected: isEsp32DataConnected }));
+  
+  ws.on('close', () => {
+    console.log('WebSocket client disconnected');
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket client error:', error);
+  });
+});
+
+function broadcastMqttStatus() {
+  wss.clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'MQTT_STATUS', isConnected: isMqttConnected }));
+    }
+  });
+}
+
+function broadcastDataStatus() {
+  wss.clients.forEach((ws) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'DATA_STATUS', isConnected: isEsp32DataConnected }));
+    }
+  });
+}
+
 app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL || "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3000"
-    ],
-    credentials: true
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
 
-// Request logging middleware
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-    next();
+const mqttBrokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://172.20.10.14:1883';
+const SENSOR_TOPIC = 'iot/sensor/data';
+const COMMAND_TOPIC = 'iot/led/control';
+const STATUS_TOPIC = 'iot/led/status';
+
+let currentLedStatus = { led1: 'off', led2: 'off', led3: 'off' };
+
+const mqttClient = mqtt.connect(mqttBrokerUrl, {
+  username: process.env.MQTT_USERNAME || 'binh',
+  password: process.env.MQTT_PASSWORD || '123456',
+  keepalive: 120,
+  reconnectPeriod: 1000,
+  connectTimeout: 30 * 1000,
 });
 
-// API 
+mqttClient.on('connect', () => {
+  console.log('Connected to MQTT Broker');
+  isMqttConnected = true;
+  broadcastMqttStatus();
+  mqttClient.subscribe([SENSOR_TOPIC, STATUS_TOPIC], (err) => {
+    if (err) console.error('MQTT subscribe error:', err);
+  });
+});
 
+mqttClient.on('reconnect', () => {
+  console.log('Reconnecting to MQTT Broker...');
+  isMqttConnected = false;
+  broadcastMqttStatus();
+});
 
-// 1. API lấy dữ liệu cảm biến mới nhất
-app.get('/api/sensor-data', (req, res) => {
-    const query = `
-        SELECT temperature, humidity, light
-        FROM sensor_data
-        ORDER BY time DESC
-        LIMIT 1
-    `;
+mqttClient.on('close', () => {
+  console.log('Disconnected from MQTT Broker');
+  isMqttConnected = false;
+  broadcastMqttStatus();
+});
 
-    connection.query(query, (err, results) => {
+mqttClient.on('error', (error) => {
+  console.error('MQTT Connection Error:', error);
+  isMqttConnected = false;
+  broadcastMqttStatus();
+});
+
+function checkDataConnection() {
+  const timeSinceLastData = Date.now() - lastDataTimestamp;
+  const currentlyConnected = timeSinceLastData < DATA_TIMEOUT;
+  if (isEsp32DataConnected !== currentlyConnected) {
+    isEsp32DataConnected = currentlyConnected;
+    console.log(`ESP32 Data ${isEsp32DataConnected ? 'Connected' : 'Disconnected'}`);
+    broadcastDataStatus();
+  }
+}
+setInterval(checkDataConnection, 5000);
+
+mqttClient.on('message', async (topic, message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    if (topic === SENSOR_TOPIC) {
+      lastDataTimestamp = Date.now();
+      if (!isEsp32DataConnected) {
+        isEsp32DataConnected = true;
+        broadcastDataStatus();
+      }
+
+      const sql = `INSERT INTO sensor_data (temperature, humidity, light, time) VALUES (?, ?, ?, NOW())`;
+      const params = [data.temperature, data.humidity, data.light];
+      
+      pool.query(sql, params, (err) => {
         if (err) {
-            return res.status(500).send('Error fetching data from database');
-        }
-        res.json(results[0]); // Trả về hàng đầu tiên (mới nhất)
-    });
-});
-
-// 2. API điều khiển đèn và lưu lịch sử
-app.post('/api/control', (req, res) => {
-    console.log('Request body:', req.body); // log để kiểm tra
-
-    const { deviceName, action } = req.body;
-    console.log(`Device: ${deviceName}, Action: ${action}`);
-
-    if (!deviceName || !action) {
-        return res.status(400).json({ error: 'deviceName and action are required' });
-    }
-
-    const query = `
-        INSERT INTO action_history (device_name, action, timestamp, description)
-        VALUES (?, ?, NOW(), ?)
-    `;
-    const description = `Turned ${action.toLowerCase()} the ${deviceName}`;
-
-    connection.query(query, [deviceName, action, description], (err) => {
-        if (err) {
-            console.error('Error inserting action into database:', err);
-            return res.status(500).json({ error: 'Internal Server Error' });
-        }
-        res.json({ success: true, message: `Action ${action} sent to ${deviceName}` });
-    });
-});
-
-// 3. API tìm kiếm phân trang Data
-app.get('/api/data/history', (req, res) => {
-    const page         = parseInt(req.query.page)  || 1;
-    const limit        = parseInt(req.query.limit) || 5;
-    const offset       = (page - 1) * limit;
-    const filterType   = req.query.filterType;
-    const searchQuery  = req.query.searchQuery;
-    const sortColumn   = req.query.sortColumn;
-    const sortDirection= req.query.sortDirection || 'asc';
-
-    let baseQuery   = 'SELECT id, temperature, light, humidity, time FROM sensor_data';
-    let countQuery  = 'SELECT COUNT(*) as total FROM sensor_data';
-    let whereClause = '';
-    let params      = [];
-
-    // Add search filtering if provided
-    if (searchQuery && filterType && filterType !== 'all') {
-        whereClause = ` WHERE ${filterType} LIKE ?`;
-        params.push(`%${searchQuery}%`);
-    }
-
-    // Add sorting
-    let orderClause = ' ORDER BY time DESC';
-    if (sortColumn) {
-        orderClause = ` ORDER BY ${sortColumn} ${sortDirection}`;
-    }
-
-    baseQuery  += whereClause + orderClause + ' LIMIT ? OFFSET ?';
-    countQuery += whereClause;
-
-    // Add pagination parameters
-    params.push(limit, offset);
-
-    connection.query(countQuery, params.slice(0, -2), (err, countResults) => {
-        if (err) {
-            console.error('Error executing count query:', err);
-            return res.status(500).json({ error: 'Internal Server Error' });
-        }
-
-        connection.query(baseQuery, params, (err, results) => {
-            if (err) {
-                console.error('Error executing data query:', err);
-                return res.status(500).json({ error: 'Internal Server Error' });
-            }
-
-            res.json({
-                data: results,
-                pagination: {
-                    total: countResults[0].total,
-                    currentPage: page,
-                    totalPages: Math.ceil(countResults[0].total / limit),
-                    limit
-                }
-            });
-        });
-    });
-});
-
-// 4. API tìm kiếm và phân trang History
-app.get('/api/actions/history', (req, res) => {
-    const page         = parseInt(req.query.page)  || 1;
-    const limit        = parseInt(req.query.limit) || 5;
-    const offset       = (page - 1) * limit;
-    const filterType   = req.query.filterType;
-    const searchQuery  = req.query.searchQuery;
-    const sortColumn   = req.query.sortColumn   || 'timestamp';
-    const sortDirection= req.query.sortDirection|| 'desc';
-
-    let baseQuery   = 'SELECT id, device_name, action, timestamp FROM action_history';
-    let countQuery  = 'SELECT COUNT(*) as total FROM action_history';
-    let whereClause = '';
-    let params      = [];
-
-    // Add search filtering if provided
-    if (searchQuery && filterType && filterType !== 'all') {
-        if (filterType === 'timestamp') {
-            whereClause = ' WHERE DATE_FORMAT(timestamp, \'%Y-%m-%d %H:%i:%s\') LIKE ?';
+          console.error('DB insert error:', err);
         } else {
-            whereClause = ` WHERE ${filterType} LIKE ?`;
+          console.log(`Sensor data saved to DB: T=${data.temperature}, H=${data.humidity}, L=${data.light}`);
+          const sensorData = {
+            type: 'SENSOR_DATA',
+            temperature: data.temperature,
+            humidity: data.humidity,
+            light: data.light,
+            time: new Date().toISOString()
+          };
+          console.log('Broadcasting sensor data to WebSocket clients:', sensorData);
+          wss.clients.forEach((ws) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify(sensorData));
+              console.log('Sent to WebSocket client');
+            } else {
+              console.log('WebSocket client not ready');
+            }
+          });
         }
-        params.push(`%${searchQuery}%`);
+      });
     }
 
-    // Add sorting
-    baseQuery  += whereClause + ` ORDER BY ${sortColumn} ${sortDirection} LIMIT ? OFFSET ?`;
-    countQuery += whereClause;
+    if (topic === STATUS_TOPIC && data?.led && ['on', 'off'].includes(data.status)) {
+      if (currentLedStatus[data.led] !== undefined) {
+        currentLedStatus[data.led] = data.status;
+      }
+    }
+  } catch (error) {
+    console.error('Error processing MQTT message:', error);
+  }
+});
+//api lấy dữ liệu cảm biến mới nhất
+app.get('/api/sensor-data', (req, res) => {
+  const query = `
+    SELECT temperature, humidity, light, \`time\`
+    FROM sensor_data
+    ORDER BY \`time\` DESC
+    LIMIT 1
+  `;
+  
+  pool.query(query, (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    // Include ESP32 connection status
+    const response = {
+      ...(results[0] || {}),
+      esp32Connected: isEsp32DataConnected,
+      mqttConnected: isMqttConnected
+    };
+    
+    res.json(response);
+  });
+});
 
-    // Add pagination parameters
-    params.push(limit, offset);
+//api kiểm tra trạng thái kết nối
+app.get('/api/connection-status', (req, res) => {
+  res.json({
+    esp32Connected: isEsp32DataConnected,
+    mqttConnected: isMqttConnected,
+    lastDataTimestamp: lastDataTimestamp,
+    timeSinceLastData: Date.now() - lastDataTimestamp
+  });
+});
 
-    // Execute count query first
-    connection.query(countQuery, params.slice(0, -2), (err, countResults) => {
-        if (err) {
-            console.error('Error executing count query:', err);
-            return res.status(500).json({ error: 'Internal Server Error' });
+//api điều khiển đèn
+app.post('/api/control', (req, res) => {
+  const { deviceName, action } = req.body;
+  if (!deviceName || !action) return res.status(400).json({ error: 'Missing fields' });
+  
+  // Check if ESP32 is connected before allowing control
+  console.log(`Control request: ${deviceName} ${action}, ESP32 connected: ${isEsp32DataConnected}`);
+  if (!isEsp32DataConnected) {
+    console.log(`ESP32 disconnected - rejecting control command: ${deviceName} ${action}`);
+    return res.status(503).json({ error: 'ESP32 disconnected - cannot control devices' });
+  }
+
+  const description = `Turned ${action.toLowerCase()} the ${deviceName}`;
+  const sql = `INSERT INTO action_history (device_name, action, timestamp, description) VALUES (?, ?, NOW(), ?)`;
+  const params = [deviceName, action, description];
+  
+  pool.query(sql, params, (err) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    console.log(`Action history saved: ${deviceName} ${action}`);
+    
+    // Map backend device names to ESP32 expected format
+    let esp32DeviceName = deviceName.toLowerCase();
+    if (deviceName === 'air_conditioner') {
+      esp32DeviceName = 'air conditioner';
+    }
+    // Note: 'light' stays as 'light', 'fan' stays as 'fan'
+    
+    const command = `${esp32DeviceName}_${action.toLowerCase()}`;
+    
+    console.log(`Attempting to publish MQTT command: ${command} to topic: ${COMMAND_TOPIC}`);
+    console.log(`MQTT client connected: ${isMqttConnected}`);
+    
+    mqttClient.publish(COMMAND_TOPIC, command, (pubErr) => {
+      if (pubErr) {
+        console.error('MQTT publish error:', pubErr);
+        return res.status(500).json({ error: 'MQTT publish error: ' + pubErr.message });
+      }
+      console.log(`✅ MQTT command sent successfully: ${command} to ${COMMAND_TOPIC}`);
+      res.json({ success: true, message: `Action ${action} sent to ${deviceName}` });
+    });
+  });
+});
+//api phân trang lấy dữ liệu cảm biến
+app.get('/api/data', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 5;
+  const offset = (page - 1) * limit;
+  const filterType = req.query.filterType;
+  const searchQuery = req.query.searchQuery;
+  const sortColumn = req.query.sortColumn;
+  const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
+
+  const allowedCols = ['id', 'temperature', 'light', 'humidity', 'time'];
+  const sortColSafe = allowedCols.includes(sortColumn) ? sortColumn : 'time';
+  const sortDirSafe = sortDirection === 'asc' ? 'ASC' : 'DESC';
+
+  let baseQuery = 'SELECT id, temperature, light, humidity, `time` FROM sensor_data';
+  let countQuery = 'SELECT COUNT(*) as total FROM sensor_data';
+  let whereClause = '';
+  const params = [];
+
+  if (searchQuery && filterType && filterType !== 'all' && allowedCols.includes(filterType)) {
+    whereClause = ` WHERE \`${filterType}\` LIKE ?`;
+    params.push(`%${searchQuery}%`);
+  }
+
+  baseQuery += whereClause + ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
+  countQuery += whereClause;
+
+  // Use callback-based query
+  pool.query(countQuery, params, (err, countResults) => {
+    if (err) {
+      console.error('Count query error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    pool.query(baseQuery, params, (err2, results) => {
+      if (err2) {
+        console.error('Data query error:', err2);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      const total = countResults[0]?.total || 0;
+      res.json({
+        data: results,
+        pagination: {
+          total,
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          limit
         }
-
-        // Then execute data query
-        connection.query(baseQuery, params, (err, results) => {
-            if (err) {
-                console.error('Error executing data query:', err);
-                return res.status(500).json({ error: 'Internal Server Error' });
-            }
-
-            res.json({
-                data: results,
-                pagination: {
-                    total: countResults[0].total,
-                    currentPage: page,
-                    totalPages: Math.ceil(countResults[0].total / limit),
-                    limit
-                }
-            });
-        });
+      });
     });
+  });
 });
+//api phân trang lấy lịch sử điều khiển
 
-// 404 handler
-app.use('*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'API endpoint not found'
-    });
-});
+app.get('/api/actions/history', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 5;
+  const offset = (page - 1) * limit;
+  const filterType = req.query.filterType;
+  const searchQuery = req.query.searchQuery;
+  const sortColumn = req.query.sortColumn || 'timestamp';
+  const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
 
-// Error handler
-app.use((error, req, res, next) => {
-    console.error('Server error:', error);
-    res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  const allowedCols = ['device_name', 'action', 'timestamp'];
+  const sortColSafe = allowedCols.includes(sortColumn) ? sortColumn : 'timestamp';
+  const sortDirSafe = sortDirection === 'asc' ? 'ASC' : 'DESC';
+
+  let baseQuery = 'SELECT id, device_name, action, timestamp FROM action_history';
+  let countQuery = 'SELECT COUNT(*) as total FROM action_history';
+  let whereClause = '';
+  const params = [];
+
+  if (searchQuery && filterType && filterType !== 'all' && allowedCols.includes(filterType)) {
+    if (filterType === 'timestamp') {
+      whereClause = ' WHERE DATE_FORMAT(timestamp, "%Y-%m-%d %H:%i:%s") LIKE ?';
+    } else {
+      whereClause = ` WHERE \`${filterType}\` LIKE ?`;
+    }
+    params.push(`%${searchQuery}%`);
+  }
+
+  baseQuery += whereClause + ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
+  countQuery += whereClause;
+
+  // Use callback-based query
+  pool.query(countQuery, params, (err, countResults) => {
+    if (err) {
+      console.error('Count query error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    pool.query(baseQuery, params, (err2, results) => {
+      if (err2) {
+        console.error('Data query error:', err2);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      const total = countResults[0]?.total || 0;
+      res.json({
+        data: results,
+        pagination: {
+          total,
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          limit
+        }
+      });
     });
+  });
 });
 
 const initializeServer = async () => {
-    try {
-        console.log('Khởi tạo IoT Backend Server...');
+  try {
+    console.log('Initializing IoT Backend Server...');
+    const dbInitialized = await initializeDatabase();
+    if (!dbInitialized) throw new Error('Database initialization failed');
 
-        const dbInitialized = await initializeDatabase();
-        if (!dbInitialized) {
-            throw new Error('Failed to initialize database');
-        }
+    server.listen(port, () => {
+      console.log(`Server running at http://localhost:${port}`);
+      console.log(`MQTT Broker: ${mqttBrokerUrl}`);
+    });
 
-        const PORT = process.env.PORT || 5000;
-        app.listen(PORT, () => {
-            console.log(`Server đang chạy trên port ${PORT}`);
-            console.log(`API base URL: http://localhost:${PORT}/api`);
-            console.log('');
-            console.log('CÁC API CÓ SẴN:');
-            console.log('   GET  /api/sensor-data     - API lấy dữ liệu cảm biến mới nhất');
-            console.log('   POST /api/control         - API điều khiển đèn và lưu lịch sử');
-            console.log('   GET  /api/data/history    - API tìm kiếm phân trang Data');
-            console.log('   GET  /api/actions/history - API tìm kiếm và phân trang History');
-        });
+    const shutdown = (signal) => {
+      console.log(`${signal} received, shutting down...`);
+      server.close(() => {
+        try { mqttClient.end(true); } catch {}
+        process.exit(0);
+      });
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 
-    } catch (error) {
-        console.error('Không thể khởi tạo server:', error);
-        process.exit(1);
-    }
+  } catch (error) {
+    console.error('Server initialization failed:', error);
+    process.exit(1);
+  }
 };
-
-const gracefulShutdown = () => {
-    console.log('Nhận tín hiệu tắt server, đang đóng server một cách an toàn...');
-    process.exit(0);
-};
-
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
-
-process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    gracefulShutdown();
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    gracefulShutdown();
-});
 
 initializeServer();
-
 module.exports = app;

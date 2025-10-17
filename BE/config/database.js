@@ -49,14 +49,21 @@ const initializeDatabase = async () => {
     }
 };
 
-// Get connection for simple queries
+// Get connection for simple queries (callback-based)
 const getConnection = () => {
     return pool;
 };
 
+// Get promise-based connection for async operations
+const getPromiseConnection = () => {
+    return promisePool;
+};
+
 module.exports = {
-    pool: promisePool,
+    pool: pool,  // Use callback-based pool
+    promisePool: promisePool,
     testConnection,
     initializeDatabase,
-    getConnection
+    getConnection,
+    getPromiseConnection
 };

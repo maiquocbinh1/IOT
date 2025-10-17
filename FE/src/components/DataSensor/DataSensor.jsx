@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import "./DataSensor.css";
 import apiService from "../../services/api";
+import webSocketService from "../../services/websocket";
 
 // Data Sensor Component
 const DataSensor = () => {
@@ -19,9 +20,9 @@ const DataSensor = () => {
     datetime: ''
   });
   
-  // Sort state
-  const [sortField, setSortField] = useState("");
-  const [sortDirection, setSortDirection] = useState("asc");
+  // Sort state - default to newest first
+  const [sortField, setSortField] = useState("time");
+  const [sortDirection, setSortDirection] = useState("desc");
   
   // Data state
   const [sensorData, setSensorData] = useState([]);
@@ -36,144 +37,61 @@ const DataSensor = () => {
       setLoading(true);
       setError(null);
 
-      // Check if search term is a number (ID search)
-      if (searchTerm.trim() && !isNaN(searchTerm.trim())) {
-        try {
-          const response = await apiService.getSensorDataById(parseInt(searchTerm.trim()));
-          if (response.success && response.data) {
-            setSensorData([response.data]);
-            setTotalPages(1);
-            setTotalRecords(1);
-          } else {
-            setSensorData([]);
-            setTotalPages(0);
-            setTotalRecords(0);
-          }
-          return;
-        } catch (err) {
-          console.error('Error fetching by ID:', err);
-          setSensorData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          return;
-        }
-      }
-
+      // Build search parameters - default to newest first
       const params = {
         page: currentPage,
         limit: 10,
-        search: searchTerm,
-        filterType: filterType,
-        sortField: sortField,
-        sortDirection: sortDirection
+        sortColumn: sortField || "time",
+        sortDirection: sortDirection || "desc"
       };
 
-      // Add time range parameters if timeSearch is provided and valid
-      if (timeSearch) {
-        const timeValue = new Date(timeSearch);
-        const now = new Date();
-        
-        // Check if the date is valid
-        if (isNaN(timeValue.getTime())) {
-          // Invalid date, show empty results
-          setSensorData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          setError(null);
-          setLoading(false);
-          return;
+      // Handle search - ID search and specific value search
+      if (searchTerm.trim()) {
+        // Check if search term is a number (ID search)
+        if (!isNaN(searchTerm.trim()) && searchTerm.trim() !== '') {
+          params.searchQuery = searchTerm.trim();
+          params.filterType = 'id';
+        } else {
+          // Search by specific values (temperature, humidity, light)
+          params.searchQuery = searchTerm.trim();
+          params.filterType = filterType === 'All' ? undefined : filterType.toLowerCase();
+          // Keep newest first for value searches too
+          params.sortColumn = filterType === 'All' ? 'time' : filterType.toLowerCase();
+          params.sortDirection = 'desc';
         }
-        
-        // Check if the date is in the future (not valid for sensor data)
-        if (timeValue > now) {
-          // Future date, show empty results
-          setSensorData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          setError(null);
-          setLoading(false);
-          return;
-        }
-        
-        // Check if the date is too far in the past (before 2020)
-        const minDate = new Date('2020-01-01');
-        if (timeValue < minDate) {
-          // Too old date, show empty results
-          setSensorData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          setError(null);
-          setLoading(false);
-          return;
-        }
-        
-        params.timeStart = timeSearch;
-        params.timeEnd = timeSearch;
       }
 
-      // Apply specific field filtering
-      if (filterType !== 'All' && searchTerm) {
-        // Clear general search and use specific field
-        params.search = undefined;
-        if (filterType === 'Temperature') {
-          params.temperature = searchTerm;
-        } else if (filterType === 'Humidity') {
-          params.humidity = searchTerm;
-        } else if (filterType === 'Light') {
-          params.light = searchTerm;
-        }
+      // Add time range search if provided
+      if (timeSearch.trim()) {
+        params.searchQuery = timeSearch.trim();
+        params.filterType = 'timestamp';
       }
 
       const response = await apiService.getSensorData(params);
       
       console.log('DataSensor API Response:', response);
+      console.log('Response data:', response.data);
+      console.log('Response pagination:', response.pagination);
       
-      if (response.success) {
-        setSensorData(response.data || []);
+      if (response && response.data && Array.isArray(response.data)) {
+        console.log('Setting sensor data:', response.data);
+        setSensorData(response.data);
         setTotalPages(response.pagination?.totalPages || 1);
-        setTotalRecords(response.pagination?.totalCount || 0);
-        console.log('Pagination:', response.pagination);
+        setTotalRecords(response.pagination?.total || 0);
         setError(null); // Clear any previous errors
       } else {
-        setError(response.message || 'Failed to fetch sensor data');
-        // Only use fallback data if no time search is active
-        if (!timeSearch) {
-          setSensorData([
-            { id: "#1024", temperature: 22.4, humidity: 48, light: 720, time: "2025-08-24 09:15" },
-            { id: "#1023", temperature: 22.1, humidity: 49, light: 680, time: "2025-08-24 09:00" },
-            { id: "#1022", temperature: 21.9, humidity: 50, light: 640, time: "2025-08-24 08:45" },
-            { id: "#1021", temperature: 21.7, humidity: 50, light: 610, time: "2025-08-24 08:30" },
-            { id: "#1020", temperature: 21.6, humidity: 51, light: 580, time: "2025-08-24 08:15" },
-          ]);
-          setTotalPages(1);
-          setTotalRecords(5);
-        } else {
-          // If time search is active and no results, show empty
-          setSensorData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching sensor data:', err);
-      setError('Failed to fetch sensor data');
-      // Only use fallback data if no time search is active
-      if (!timeSearch) {
-        setSensorData([
-          { id: "#1024", temperature: 22.4, humidity: 48, light: 720, time: "2025-08-24 09:15" },
-          { id: "#1023", temperature: 22.1, humidity: 49, light: 680, time: "2025-08-24 09:00" },
-          { id: "#1022", temperature: 21.9, humidity: 50, light: 640, time: "2025-08-24 08:45" },
-          { id: "#1021", temperature: 21.7, humidity: 50, light: 610, time: "2025-08-24 08:30" },
-          { id: "#1020", temperature: 21.6, humidity: 51, light: 580, time: "2025-08-24 08:15" },
-        ]);
-        setTotalPages(1);
-        setTotalRecords(5);
-      } else {
-        // If time search is active and error, show empty
+        console.log('No valid data received, setting empty array');
+        setError('No data received from server');
         setSensorData([]);
         setTotalPages(0);
         setTotalRecords(0);
       }
+    } catch (err) {
+      console.error('Error fetching sensor data:', err);
+      setError('Failed to fetch sensor data');
+      setSensorData([]);
+      setTotalPages(0);
+      setTotalRecords(0);
     } finally {
       setLoading(false);
     }
@@ -184,10 +102,11 @@ const DataSensor = () => {
     fetchSensorData();
   }, [currentPage, searchTerm, filterType, timeSearch, sortField, sortDirection]);
 
-  // Auto-refresh data every 10 seconds
+  // Auto-refresh data every 10 seconds (only when ESP32 connected)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (currentPage === 1) { // Only auto-refresh on first page
+      // Only auto-refresh if ESP32 is connected and on first page
+      if (currentPage === 1) {
         fetchSensorData();
       }
     }, 10000);
@@ -195,32 +114,58 @@ const DataSensor = () => {
     return () => clearInterval(interval);
   }, [currentPage]);
 
+  // WebSocket listener for real-time data updates
+  useEffect(() => {
+    let unsubscribeSensorData, unsubscribeDataStatus;
+    
+    try {
+      unsubscribeSensorData = webSocketService.on('sensorData', (newData) => {
+        console.log('Received real-time sensor data for DataSensor:', newData);
+        // Only refresh data when new sensor data arrives and ESP32 is connected
+        fetchSensorData();
+      });
+
+      unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
+        console.log('ESP32 Data Status in DataSensor:', data);
+        // Refresh data when connection status changes
+        fetchSensorData();
+      });
+    } catch (error) {
+      console.error('Error setting up WebSocket listeners in DataSensor:', error);
+    }
+
+    return () => {
+      try {
+        if (unsubscribeSensorData) unsubscribeSensorData();
+        if (unsubscribeDataStatus) unsubscribeDataStatus();
+      } catch (error) {
+        console.error('Error cleaning up WebSocket listeners in DataSensor:', error);
+      }
+    };
+  }, [currentPage, searchTerm, timeSearch]);
+
   // Handle sort
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
-      setSortDirection('asc');
+      setSortDirection('desc'); // Default to newest first
     }
   };
 
-  // Handle ID search change
-  const handleIdSearchChange = (e) => {
-    setIdSearch(e.target.value);
-  };
+  // Fetch data when sort changes
+  useEffect(() => {
+    fetchSensorData();
+  }, [sortField, sortDirection]);
 
   // Clear all filters
   const clearFilters = () => {
     setSearchTerm("");
     setFilterType("All");
-    setTemperatureFilter("");
-    setHumidityFilter("");
-    setLightFilter("");
-    setTimeFilter("");
-    setIdSearch("");
-    setSortField("");
-    setSortDirection("asc");
+    setTimeSearch("");
+    setSortField("time");
+    setSortDirection("desc");
     setCurrentPage(1);
   };
 
@@ -352,10 +297,10 @@ const DataSensor = () => {
           <input
             type="text"
             placeholder={
-              filterType === 'Temperature' ? 'Enter exact temperature value (e.g., 34.5)' :
-              filterType === 'Humidity' ? 'Enter exact humidity value (e.g., 57)' :
-              filterType === 'Light' ? 'Enter exact light value (e.g., 200)' :
-              'Search by ID (number) or exact values: Temperature, Humidity, Light, Time'
+              filterType === 'Temperature' ? 'Enter temperature value (shows from low to high)' :
+              filterType === 'Humidity' ? 'Enter humidity value (shows from low to high)' :
+              filterType === 'Light' ? 'Enter light value (shows from low to high)' :
+              'Search by ID or specific values'
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -382,6 +327,9 @@ const DataSensor = () => {
         </select>
         
         <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
+        <button className="refresh-btn" onClick={fetchSensorData} style={{marginLeft: '10px', padding: '8px 16px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}>
+          🔄 Refresh
+        </button>
         {timeSearch && (
           <button 
             className="clear-time-btn"
@@ -398,7 +346,7 @@ const DataSensor = () => {
       {/* Individual Search Filters */}
       <div className="individual-filters">
         <div className="filter-group">
-          <label>Time Range:</label>
+          <label>Search Before Time:</label>
           <input
             type="datetime-local"
             placeholder="mm/dd/yyyy --:--"

@@ -1,5 +1,3 @@
-import io from 'socket.io-client';
-
 class WebSocketService {
     constructor() {
         this.socket = null;
@@ -11,19 +9,14 @@ class WebSocketService {
     }
 
     // Connect to WebSocket server
-    connect(serverUrl = 'http://localhost:5000') {
+    connect(serverUrl = 'ws://localhost:5000') {
         if (this.socket && this.isConnected) {
             console.log('WebSocket already connected');
             return;
         }
 
         try {
-            this.socket = io(serverUrl, {
-                transports: ['websocket', 'polling'],
-                timeout: 20000,
-                forceNew: true
-            });
-
+            this.socket = new WebSocket(serverUrl);
             this.setupEventListeners();
             console.log('WebSocket connecting to:', serverUrl);
         } catch (error) {
@@ -36,49 +29,54 @@ class WebSocketService {
         if (!this.socket) return;
 
         // Connection events
-        this.socket.on('connect', () => {
-            console.log('✅ WebSocket connected');
+        this.socket.onopen = () => {
+            console.log('WebSocket connected');
             this.isConnected = true;
             this.reconnectAttempts = 0;
             this.emit('connection', { status: 'connected' });
-        });
+        };
 
-        this.socket.on('disconnect', (reason) => {
-            console.log('❌ WebSocket disconnected:', reason);
+        this.socket.onclose = (event) => {
+            console.log('WebSocket disconnected:', event.code, event.reason);
             this.isConnected = false;
-            this.emit('connection', { status: 'disconnected', reason });
-            this.handleReconnect();
-        });
+            this.emit('connection', { status: 'disconnected', reason: event.reason });
+            // Don't auto-reconnect immediately, let user manually reconnect
+        };
 
-        this.socket.on('connect_error', (error) => {
+        this.socket.onerror = (error) => {
             console.error('WebSocket connection error:', error);
             this.emit('connection', { status: 'error', error: error.message });
-            this.handleReconnect();
-        });
+            // Don't auto-reconnect on error
+        };
 
-        // Sensor data events
-        this.socket.on('sensor_data_update', (data) => {
-            console.log('📊 Received sensor data:', data);
-            this.emit('sensorData', data.data); // Extract data from the wrapper
-        });
-
-        // LED status events
-        this.socket.on('led_status_update', (data) => {
-            console.log('💡 Received LED status:', data);
-            this.emit('ledStatus', data.data); // Extract data from the wrapper
-        });
-
-        // Error events
-        this.socket.on('error', (error) => {
-            console.error('WebSocket error:', error);
-            this.emit('error', error);
-        });
-
-        // Custom events
-        this.socket.on('systemStatus', (data) => {
-            console.log('🔧 System status update:', data);
-            this.emit('systemStatus', data);
-        });
+        // Message events
+        this.socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Received WebSocket message:', data);
+                
+                // Handle different message types
+                switch (data.type) {
+                    case 'MQTT_STATUS':
+                        console.log('MQTT Status:', data);
+                        this.emit('mqttStatus', data);
+                        break;
+                    case 'DATA_STATUS':
+                        console.log('Data Status:', data);
+                        this.emit('dataStatus', data);
+                        break;
+                    case 'SENSOR_DATA':
+                        console.log('Sensor Data:', data);
+                        this.emit('sensorData', data);
+                        break;
+                    default:
+                        console.log('Unknown message type:', data);
+                        this.emit('message', data);
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message:', error);
+            }
+        };
     }
 
     // Handle reconnection
@@ -96,7 +94,7 @@ class WebSocketService {
         
         setTimeout(() => {
             if (!this.isConnected) {
-                this.socket?.connect();
+                this.connect();
             }
         }, delay);
     }
@@ -157,9 +155,9 @@ class WebSocketService {
     }
 
     // Send message to server
-    emitToServer(event, data) {
+    sendMessage(data) {
         if (this.socket && this.isConnected) {
-            this.socket.emit(event, data);
+            this.socket.send(JSON.stringify(data));
         } else {
             console.warn('WebSocket not connected, cannot send message');
         }
@@ -170,33 +168,8 @@ class WebSocketService {
         return {
             isConnected: this.isConnected,
             reconnectAttempts: this.reconnectAttempts,
-            socketId: this.socket?.id || null
+            readyState: this.socket?.readyState || null
         };
-    }
-
-    // Request system status
-    requestSystemStatus() {
-        this.emitToServer('requestSystemStatus');
-    }
-
-    // Subscribe to sensor data updates
-    subscribeToSensorData() {
-        this.emitToServer('subscribeSensorData');
-    }
-
-    // Subscribe to LED status updates
-    subscribeToLEDStatus() {
-        this.emitToServer('subscribeLEDStatus');
-    }
-
-    // Unsubscribe from sensor data updates
-    unsubscribeFromSensorData() {
-        this.emitToServer('unsubscribeSensorData');
-    }
-
-    // Unsubscribe from LED status updates
-    unsubscribeFromLEDStatus() {
-        this.emitToServer('unsubscribeLEDStatus');
     }
 }
 

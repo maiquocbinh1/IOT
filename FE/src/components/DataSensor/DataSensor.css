@@ -1,5 +1,5 @@
 .data-sensor-page {
-  padding: 1.5rem;
+  padding: 0.5rem;
   height: 100vh;
   width: 100%;
   display: flex;
@@ -365,6 +365,8 @@
   min-height: 0;
   width: 100%;
   display: block;
+  padding: 0;
+  margin: 0;
 }
 
 .data-table {

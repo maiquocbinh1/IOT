@@ -14,6 +14,7 @@ const DeviceControl = () => {
   const [success, setSuccess] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [hardwareConnected, setHardwareConnected] = useState(true);
+  const [esp32Connected, setEsp32Connected] = useState(false); // Start with false, will be updated by WebSocket
   const [savedDeviceStates, setSavedDeviceStates] = useState(null);
 
   // Initialize WebSocket connection and load device status
@@ -30,12 +31,13 @@ const DeviceControl = () => {
       }
     };
 
-           // Load initial device status
+           // Load initial device status and connection status
            const loadDeviceStatus = async () => {
              try {
-               // For now, use default values since we don't have a real status endpoint
-               // The devices will be controlled via MQTT and status will be updated via WebSocket
-               console.log('Device status loaded with default values');
+               // Get connection status from API
+               const connectionStatus = await apiService.getConnectionStatus();
+               console.log('Connection status from API:', connectionStatus);
+               setEsp32Connected(connectionStatus.esp32Connected);
              } catch (err) {
                console.error('Error loading device status:', err);
                // Keep default values
@@ -45,43 +47,41 @@ const DeviceControl = () => {
     connectWebSocket();
     loadDeviceStatus();
 
-    // Check hardware connection status periodically
-    const checkHardwareConnection = () => {
-      // Simulate hardware check - in real implementation, this would check actual hardware
-      // For now, we'll use WebSocket connection as a proxy for hardware connection
-      if (!wsConnected) {
-        // Hardware disconnected - turn off all devices and save states
-        if (hardwareConnected) {
-          setSavedDeviceStates({ ...devices });
-          
-          // Send OFF commands to all devices
-          turnOffAllDevices();
-          
-          setDevices({
-            fan: false,
-            airConditioner: false,
-            light: false
-          });
-          console.log('Hardware disconnected - turned off all devices and saved states:', devices);
+    // Set up WebSocket listeners for connection status
+    let unsubscribeDataStatus, unsubscribeMqttStatus;
+    
+    try {
+      unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
+        console.log('ESP32 Data Status in DeviceControl:', data);
+        setEsp32Connected(data.isConnected);
+      });
+
+      unsubscribeMqttStatus = webSocketService.on('mqttStatus', (data) => {
+        console.log('MQTT Status in DeviceControl:', data);
+        // MQTT status can also indicate ESP32 connection
+        if (data.isConnected) {
+          setEsp32Connected(true);
         }
-        setHardwareConnected(false);
-      } else {
-        // Hardware reconnected - restore saved states if available
-        if (!hardwareConnected && savedDeviceStates) {
-          setDevices(savedDeviceStates);
-          setSavedDeviceStates(null);
-          console.log('Hardware reconnected - restored device states:', savedDeviceStates);
-          
-          // Send control commands to restore actual device states
-          restoreDeviceStates(savedDeviceStates);
-        }
-        setHardwareConnected(true);
+      });
+    } catch (error) {
+      console.error('Error setting up WebSocket listeners in DeviceControl:', error);
+    }
+
+    // Check ESP32 connection status periodically
+    const checkEsp32Connection = async () => {
+      try {
+        const connectionStatus = await apiService.getConnectionStatus();
+        console.log('Periodic ESP32 connection check:', connectionStatus);
+        setEsp32Connected(connectionStatus.esp32Connected);
+      } catch (error) {
+        console.error('Error checking ESP32 connection:', error);
+        setEsp32Connected(false);
       }
     };
 
-    // Check every 5 seconds
-    const hardwareCheckInterval = setInterval(checkHardwareConnection, 5000);
-    checkHardwareConnection(); // Initial check
+    // Check every 3 seconds
+    const connectionCheckInterval = setInterval(checkEsp32Connection, 3000);
+    checkEsp32Connection(); // Initial check
 
            // Listen for LED status updates
            const unsubscribeLEDStatus = webSocketService.on('ledStatus', (data) => {
@@ -97,20 +97,17 @@ const DeviceControl = () => {
            });
 
     // Listen for WebSocket connection status
-    const unsubscribeConnection = webSocketService.on('connect', () => {
-      setWsConnected(true);
-    });
-
-    const unsubscribeDisconnect = webSocketService.on('disconnect', () => {
-      setWsConnected(false);
+    const unsubscribeConnection = webSocketService.on('connection', (data) => {
+      setWsConnected(data.status === 'connected');
     });
 
     // Cleanup
     return () => {
       unsubscribeLEDStatus();
       unsubscribeConnection();
-      unsubscribeDisconnect();
-      clearInterval(hardwareCheckInterval);
+      unsubscribeDataStatus();
+      unsubscribeMqttStatus();
+      clearInterval(connectionCheckInterval);
     };
   }, [hardwareConnected, devices, savedDeviceStates]);
 
@@ -121,7 +118,7 @@ const DeviceControl = () => {
       
       for (const device of devices) {
         console.log(`Turning off ${device}`);
-        const response = await apiService.controlDevice(device, 'OFF');
+        const response = await apiService.controlDevice(device.toLowerCase(), 'off');
         if (response.success) {
           console.log(`${device} turned off successfully`);
         } else {
@@ -152,7 +149,7 @@ const DeviceControl = () => {
           console.log(`Restoring ${deviceDisplayName} to ON state`);
           
           // Send control command
-          const response = await apiService.controlDevice(deviceDisplayName, 'ON');
+          const response = await apiService.controlDevice(deviceName, 'on');
           if (response.success) {
             console.log(`${deviceDisplayName} restored to ON successfully`);
           } else {
@@ -169,8 +166,13 @@ const DeviceControl = () => {
   };
 
   const toggleDevice = async (deviceName) => {
-    // Check if hardware is connected
-    if (!hardwareConnected) {
+    console.log(`Toggle device called: ${deviceName}, ESP32 connected: ${esp32Connected}`);
+    
+    // Only allow control when ESP32 is connected
+    if (!esp32Connected) {
+      console.log('ESP32 not connected, cannot control device');
+      setError(`Cannot control device: ESP32 disconnected`);
+      setTimeout(() => setError(null), 5000);
       return;
     }
 
@@ -180,13 +182,17 @@ const DeviceControl = () => {
 
       const newStatus = !devices[deviceName];
       
-             // Use device names directly for backend
-             const deviceDisplayName = deviceName === 'fan' ? 'Fan' : 
-                                     deviceName === 'airConditioner' ? 'Air Conditioner' : 
-                                     'Light';
-             
-             // Display names for user
-             const userDisplayName = deviceDisplayName;
+      // Map frontend device names to backend device names
+      const deviceNameMap = {
+        'fan': 'fan',
+        'airConditioner': 'air_conditioner', 
+        'light': 'light'  // Changed from 'led' to 'light' to match backend
+      };
+      
+      const backendDeviceName = deviceNameMap[deviceName];
+      const userDisplayName = deviceName === 'fan' ? 'Fan' : 
+                            deviceName === 'airConditioner' ? 'Air Conditioner' : 
+                            'Light';
       
       // Update local state immediately for better UX
       setDevices(prev => ({
@@ -196,8 +202,8 @@ const DeviceControl = () => {
 
       // Send command via API
       try {
-        console.log(`🔄 Sending control command: ${deviceDisplayName} -> ${newStatus ? 'on' : 'off'}`);
-        const response = await apiService.controlDevice(deviceDisplayName, newStatus ? 'on' : 'off');
+        console.log(`🔄 Sending control command: ${backendDeviceName} -> ${newStatus ? 'on' : 'off'}`);
+        const response = await apiService.controlDevice(backendDeviceName, newStatus ? 'on' : 'off');
         console.log('✅ Device control API response:', response);
         
         if (response && response.success) {
@@ -236,8 +242,22 @@ const DeviceControl = () => {
   return (
     <div className="device-control">
       <h2 className="section-title">Device Control</h2>
+      {!esp32Connected && (
+        <div style={{
+          backgroundColor: '#fff3cd',
+          color: '#856404',
+          padding: '10px 15px',
+          borderRadius: '8px',
+          marginBottom: '15px',
+          border: '1px solid #ffeaa7',
+          fontSize: '14px',
+          fontWeight: '500'
+        }}>
+          ⚠️ ESP32 Disconnected - Device controls are disabled
+        </div>
+      )}
       <div className="devices-grid">
-        <div className={`device-card ${!hardwareConnected ? 'disconnected' : ''}`}>
+        <div className={`device-card ${!esp32Connected ? 'disconnected' : ''}`}>
           <div className={`device-icon fan-icon ${devices.fan ? 'spinning' : ''}`}>
             <div className="fan-blades">
               <div className="blade blade-1"></div>
@@ -252,15 +272,21 @@ const DeviceControl = () => {
                      <div className="device-status">
                        Status: {devices.fan ? 'On' : 'Off'}
                      </div>
-                     <div className={`toggle-switch ${devices.fan ? 'active' : ''} ${!hardwareConnected ? 'disabled' : ''}`} 
-                          onClick={() => hardwareConnected && toggleDevice('fan')}>
+                     <div className={`toggle-switch ${devices.fan ? 'active' : ''} ${!esp32Connected ? 'disabled' : ''}`} 
+                          onClick={() => {
+                            if (esp32Connected) {
+                              toggleDevice('fan');
+                            } else {
+                              console.log('ESP32 disconnected - cannot control fan');
+                            }
+                          }}>
                        <div className={`toggle-slider ${devices.fan ? 'active' : ''}`}></div>
                      </div>
                    </div>
                  </div>
         </div>
         
-        <div className={`device-card ${!hardwareConnected ? 'disconnected' : ''}`}>
+        <div className={`device-card ${!esp32Connected ? 'disconnected' : ''}`}>
           <div className={`device-icon ac-icon ${devices.airConditioner ? 'spinning' : ''}`}>❄️</div>
                  <div className="device-content">
                    <div className="device-name">Air Conditioner</div>
@@ -268,15 +294,21 @@ const DeviceControl = () => {
                      <div className="device-status">
                        Status: {devices.airConditioner ? 'On' : 'Off'}
                      </div>
-                     <div className={`toggle-switch ${devices.airConditioner ? 'active' : ''} ${!hardwareConnected ? 'disabled' : ''}`} 
-                          onClick={() => hardwareConnected && toggleDevice('airConditioner')}>
+                     <div className={`toggle-switch ${devices.airConditioner ? 'active' : ''} ${!esp32Connected ? 'disabled' : ''}`} 
+                          onClick={() => {
+                            if (esp32Connected) {
+                              toggleDevice('airConditioner');
+                            } else {
+                              console.log('ESP32 disconnected - cannot control air conditioner');
+                            }
+                          }}>
                        <div className={`toggle-slider ${devices.airConditioner ? 'active' : ''}`}></div>
                      </div>
                    </div>
                  </div>
         </div>
         
-        <div className={`device-card ${!hardwareConnected ? 'disconnected' : ''}`}>
+        <div className={`device-card ${!esp32Connected ? 'disconnected' : ''}`}>
           <div className={`device-icon light-icon ${devices.light ? 'glowing' : ''}`}>💡</div>
                  <div className="device-content">
                    <div className="device-name">Light</div>
@@ -284,8 +316,14 @@ const DeviceControl = () => {
                      <div className="device-status">
                        Status: {devices.light ? 'On' : 'Off'}
                      </div>
-                     <div className={`toggle-switch ${devices.light ? 'active' : ''} ${!hardwareConnected ? 'disabled' : ''}`} 
-                          onClick={() => hardwareConnected && toggleDevice('light')}>
+                     <div className={`toggle-switch ${devices.light ? 'active' : ''} ${!esp32Connected ? 'disabled' : ''}`} 
+                          onClick={() => {
+                            if (esp32Connected) {
+                              toggleDevice('light');
+                            } else {
+                              console.log('ESP32 disconnected - cannot control light');
+                            }
+                          }}>
                        <div className={`toggle-slider ${devices.light ? 'active' : ''}`}></div>
                      </div>
                    </div>

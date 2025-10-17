@@ -1,19 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import './ActionHistory.css';
 import apiService from '../../services/api';
+import webSocketService from '../../services/websocket';
 
 const ActionHistory = () => {
   // State Management
   const [filterType, setFilterType] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [timeSearch, setTimeSearch] = useState('');
-  const [idSearch, setIdSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [actionHistoryData, setActionHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
+  
+  // Sort state
+  const [sortField, setSortField] = useState("timestamp");
+  const [sortDirection, setSortDirection] = useState("desc");
 
   // Fetch action history from backend
   const fetchActionHistory = async () => {
@@ -21,48 +25,52 @@ const ActionHistory = () => {
       setLoading(true);
       setError(null);
 
-      // If ID search is provided, search by ID directly
-      if (idSearch.trim()) {
-        try {
-          const response = await apiService.getActionHistoryById(parseInt(idSearch.trim()));
-          if (response.success && response.data) {
-            setActionHistoryData([response.data]);
-            setTotalPages(1);
-            setTotalRecords(1);
-          } else {
-            setActionHistoryData([]);
-            setTotalPages(0);
-            setTotalRecords(0);
-          }
-          return;
-        } catch (err) {
-          console.error('Error fetching by ID:', err);
-          setActionHistoryData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          return;
-        }
-      }
-
+      // Build search parameters
       const params = {
         page: currentPage,
         limit: 10,
-        device: filterType === 'ALL' ? undefined : filterType,
-        time: timeSearch,
-        search: searchTerm
+        sortColumn: sortField,
+        sortDirection: sortDirection
       };
+
+      // Handle search - ID search and device/action search
+      if (searchTerm.trim()) {
+        // Check if search term is a number (ID search)
+        if (!isNaN(searchTerm.trim()) && searchTerm.trim() !== '') {
+          params.searchQuery = searchTerm.trim();
+          params.filterType = 'id';
+        } else {
+          // Search by device/action based on filter type
+          params.searchQuery = searchTerm.trim();
+          if (filterType === 'LED1') {
+            params.filterType = 'device_name';
+          } else if (filterType === 'LED2') {
+            params.filterType = 'device_name';
+          } else if (filterType === 'LED3') {
+            params.filterType = 'device_name';
+          } else {
+            params.filterType = 'device_name';
+          }
+        }
+      }
+
+      // Add time range search if provided
+      if (timeSearch.trim()) {
+        params.searchQuery = timeSearch.trim();
+        params.filterType = 'timestamp';
+      }
 
       const response = await apiService.getActionHistory(params);
       
       console.log('ActionHistory API Response:', response);
       
-      if (response.success) {
+      if (response.data) {
         setActionHistoryData(response.data || []);
         setTotalPages(response.pagination?.totalPages || 1);
-        setTotalRecords(response.pagination?.totalCount || 0);
+        setTotalRecords(response.pagination?.total || 0);
         setError(null); // Clear any previous errors
       } else {
-        setError(response.message || 'Failed to fetch action history');
+        setError('Failed to fetch action history');
         // Only use fallback data if no time search is active
         if (!timeSearch) {
           setActionHistoryData([
@@ -106,10 +114,20 @@ const ActionHistory = () => {
     }
   };
 
+  // Handle sort
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
   // Load data on component mount and when filters change
   useEffect(() => {
     fetchActionHistory();
-  }, [currentPage, filterType, timeSearch, searchTerm]);
+  }, [currentPage, filterType, timeSearch, searchTerm, sortField, sortDirection]);
 
   // Auto-refresh data every 15 seconds
   useEffect(() => {
@@ -121,6 +139,27 @@ const ActionHistory = () => {
     
     return () => clearInterval(interval);
   }, [currentPage]);
+
+  // WebSocket listener for real-time data updates
+  useEffect(() => {
+    let unsubscribeDataStatus;
+    
+    try {
+      unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
+        console.log('ESP32 Data Status in ActionHistory:', data);
+      });
+    } catch (error) {
+      console.error('Error setting up WebSocket listeners in ActionHistory:', error);
+    }
+
+    return () => {
+      try {
+        if (unsubscribeDataStatus) unsubscribeDataStatus();
+      } catch (error) {
+        console.error('Error cleaning up WebSocket listeners in ActionHistory:', error);
+      }
+    };
+  }, []);
 
   // Event Handlers
   const handleSearch = () => {
@@ -140,9 +179,6 @@ const ActionHistory = () => {
     setSearchTerm(e.target.value);
   };
 
-  const handleIdSearchChange = (e) => {
-    setIdSearch(e.target.value);
-  };
 
   // Pagination Component
   const renderPagination = () => {
@@ -229,13 +265,7 @@ const ActionHistory = () => {
           <span className="search-icon">🔍</span>
           <input
             type="text"
-            placeholder={
-              filterType === 'ALL' ? 'Search exact values: ID, Device, Action, Description, Time' :
-              filterType === 'LED1' ? 'Search exact Fan values (e.g., ON, OFF)' :
-              filterType === 'LED2' ? 'Search exact Air Conditioner values (e.g., ON, OFF)' :
-              filterType === 'LED3' ? 'Search exact Light values (e.g., ON, OFF)' :
-              'Search exact values'
-            }
+            placeholder="Search by ID or device/action (shows from low to high)"
             value={searchTerm}
             onChange={handleSearchTermChange}
           />
@@ -244,13 +274,14 @@ const ActionHistory = () => {
         <div className="id-search-wrapper">
           <span className="search-icon">#</span>
           <input
-            type="number"
-            placeholder="Search by ID (e.g., 123)"
-            value={idSearch}
-            onChange={handleIdSearchChange}
+            type="text"
+            placeholder="Search by ID"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
         
+        {/* Filter dropdown */}
         <div className="filter-dropdown">
           <select value={filterType} onChange={handleFilterChange}>
             <option value="ALL">ALL</option>
@@ -268,7 +299,7 @@ const ActionHistory = () => {
               fetchActionHistory();
             }}
           >
-            Clear Time
+            Clear Time Filter
           </button>
         )}
         
@@ -277,7 +308,7 @@ const ActionHistory = () => {
       {/* Individual Search Filters */}
       <div className="individual-filters">
         <div className="filter-group">
-          <label>TIME RANGE:</label>
+          <label>Search Before Time:</label>
           <input
             type="datetime-local"
             placeholder="mm/dd/yyyy --:--"
@@ -309,17 +340,37 @@ const ActionHistory = () => {
           <table className="action-table">
             <thead>
               <tr>
-                <th>ID</th>
-                {filterType === 'ALL' && <th>Device</th>}
-                {filterType === 'ALL' && <th>Action</th>}
-                {filterType === 'ALL' && <th>Time</th>}
+                <th onClick={() => handleSort('id')} className="sortable-header">
+                  ID {sortField === 'id' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                {filterType === 'ALL' && <th onClick={() => handleSort('device_name')} className="sortable-header">
+                  Device {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'ALL' && <th onClick={() => handleSort('action')} className="sortable-header">
+                  Action {sortField === 'action' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'ALL' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
+                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
                 {filterType === 'ALL' && <th>Status</th>}
-                {filterType === 'LED1' && <th>Fan</th>}
-                {filterType === 'LED1' && <th>Time</th>}
-                {filterType === 'LED2' && <th>Air Conditioner</th>}
-                {filterType === 'LED2' && <th>Time</th>}
-                {filterType === 'LED3' && <th>Light</th>}
-                {filterType === 'LED3' && <th>Time</th>}
+                {filterType === 'LED1' && <th onClick={() => handleSort('device_name')} className="sortable-header">
+                  Fan {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'LED1' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
+                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'LED2' && <th onClick={() => handleSort('device_name')} className="sortable-header">
+                  Air Conditioner {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'LED2' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
+                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'LED3' && <th onClick={() => handleSort('device_name')} className="sortable-header">
+                  Light {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
+                {filterType === 'LED3' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
+                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>}
               </tr>
             </thead>
             <tbody>

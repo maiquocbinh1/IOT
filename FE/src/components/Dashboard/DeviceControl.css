@@ -234,6 +234,7 @@
   background-color: #e0e0e0;
   cursor: not-allowed;
   opacity: 0.6;
+  pointer-events: none;
 }
 
 .toggle-switch.disabled:hover {
@@ -245,6 +246,12 @@
 .toggle-switch.disabled .toggle-slider {
   background-color: #f5f5f5;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-switch.disabled.active {
+  background-color: #e0e0e0;
+  border-color: #e0e0e0;
+  box-shadow: none;
 }
 
 /* Device status when hardware disconnected */

@@ -13,6 +13,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import './TemperatureHumidityChart.css';
 import apiService from '../../services/api';
+import webSocketService from '../../services/websocket';
 
 ChartJS.register(
   CategoryScale,
@@ -29,6 +30,7 @@ const TemperatureHumidityChart = () => {
   const [chartData, setChartData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [esp32Connected, setEsp32Connected] = useState(false);
 
   useEffect(() => {
     const loadChartData = async () => {
@@ -36,15 +38,16 @@ const TemperatureHumidityChart = () => {
         setLoading(true);
         setError(null);
         
-        const response = await apiService.getSensorData({
-          limit: 7,
-          page: 1
-        });
-        
-        console.log('Chart API Response:', response);
-        
-        let data;
-        if (response && response.success && response.data && response.data.length > 0) {
+        // Load chart data directly
+          const response = await apiService.getSensorData({
+            limit: 7,
+            page: 1
+          });
+          
+          console.log('Chart API Response:', response);
+          
+          let data;
+          if (response && response.data && response.data.length > 0) {
           console.log('✅ Using REAL data from API:', response.data.length, 'records');
           console.log('📊 Real data sample:', response.data[0]);
           data = response.data.slice(0, 7).reverse().map((item, index) => {
@@ -192,10 +195,167 @@ const TemperatureHumidityChart = () => {
 
     loadChartData();
     
-    const interval = setInterval(loadChartData, 30000);
+    // Real-time updates every 5 seconds
+    const interval = setInterval(async () => {
+      try {
+        // Always update chart data (whether ESP32 connected or not)
+        const response = await apiService.getSensorData({ limit: 7, page: 1 });
+        if (response && response.data && response.data.length > 0) {
+          const data = response.data.slice(0, 7).reverse().map((item, index) => {
+            const date = new Date(item.time);
+            return {
+              time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              temperature: parseFloat(item.temperature),
+              humidity: parseInt(item.humidity),
+              light: parseInt(item.light)
+            };
+          });
+          
+          const chartDataConfig = {
+            labels: data.map(item => item.time),
+            datasets: [
+              {
+                label: 'Temperature (°C)',
+                data: data.map(item => item.temperature),
+                borderColor: '#ff4444',
+                backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#ff4444',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+              },
+              {
+                label: 'Humidity (%)',
+                data: data.map(item => item.humidity),
+                borderColor: '#4444ff',
+                backgroundColor: 'rgba(68, 68, 255, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#4444ff',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+              },
+              {
+                label: 'Light (nits)',
+                data: data.map(item => item.light),
+                borderColor: '#ffaa00',
+                backgroundColor: 'rgba(255, 170, 0, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointBackgroundColor: '#ffaa00',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+              }
+            ]
+          };
+          setChartData(chartDataConfig);
+        }
+      } catch (error) {
+        console.error('Error updating chart data:', error);
+      }
+    }, 5000);
     
-    return () => clearInterval(interval);
-  }, []);
+    // WebSocket listener for real-time data
+    const unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
+      setEsp32Connected(data.isConnected);
+    });
+
+    const unsubscribeMqttStatus = webSocketService.on('mqttStatus', (data) => {
+      if (data.isConnected) {
+        setEsp32Connected(true);
+      }
+    });
+
+    // Listen for new sensor data via WebSocket
+    const unsubscribeSensorData = webSocketService.on('sensorData', (newData) => {
+      console.log('Received real-time sensor data for chart:', newData);
+      // Update chart immediately when new data arrives
+      if (newData && newData.temperature) {
+        // Fetch latest data to update chart
+        apiService.getSensorData({ limit: 7, page: 1 }).then(response => {
+          if (response && response.data && response.data.length > 0) {
+            const data = response.data.slice(0, 7).reverse().map((item, index) => {
+              const date = new Date(item.time);
+              return {
+                time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                temperature: parseFloat(item.temperature),
+                humidity: parseInt(item.humidity),
+                light: parseInt(item.light)
+              };
+            });
+            
+            const chartDataConfig = {
+              labels: data.map(item => item.time),
+              datasets: [
+                {
+                  label: 'Temperature (°C)',
+                  data: data.map(item => item.temperature),
+                  borderColor: '#ff4444',
+                  backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                  borderWidth: 3,
+                  fill: true,
+                  tension: 0.4,
+                  pointBackgroundColor: '#ff4444',
+                  pointBorderColor: '#ffffff',
+                  pointBorderWidth: 2,
+                  pointRadius: 6,
+                  pointHoverRadius: 8,
+                },
+                {
+                  label: 'Humidity (%)',
+                  data: data.map(item => item.humidity),
+                  borderColor: '#4444ff',
+                  backgroundColor: 'rgba(68, 68, 255, 0.1)',
+                  borderWidth: 3,
+                  fill: true,
+                  tension: 0.4,
+                  pointBackgroundColor: '#4444ff',
+                  pointBorderColor: '#ffffff',
+                  pointBorderWidth: 2,
+                  pointRadius: 6,
+                  pointHoverRadius: 8,
+                },
+                {
+                  label: 'Light (nits)',
+                  data: data.map(item => item.light),
+                  borderColor: '#ffaa00',
+                  backgroundColor: 'rgba(255, 170, 0, 0.1)',
+                  borderWidth: 3,
+                  fill: true,
+                  tension: 0.4,
+                  pointBackgroundColor: '#ffaa00',
+                  pointBorderColor: '#ffffff',
+                  pointBorderWidth: 2,
+                  pointRadius: 6,
+                  pointHoverRadius: 8,
+                }
+              ]
+            };
+            setChartData(chartDataConfig);
+          }
+        }).catch(error => {
+          console.error('Error updating chart with real-time data:', error);
+        });
+      }
+    });
+    
+    return () => {
+      clearInterval(interval);
+      unsubscribeDataStatus();
+      unsubscribeMqttStatus();
+      unsubscribeSensorData();
+    };
+  }, [esp32Connected]);
 
   const options = {
     responsive: true,
