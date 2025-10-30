@@ -1,5 +1,6 @@
 import React from 'react';
 import './Profile.css';
+import profileImg from './tải xuống (1).png';
 
 // Profile Page Component
 const Profile = () => {
@@ -10,13 +11,13 @@ const Profile = () => {
     msv: "B22DCCN082_D22HTTT05",
     email: "BinhMQ.B22DCCN082@stu.ptit.edu.vn",
     phone: "0886827975",
-    profileImage: "/images/profile.jpg"
+    profileImage: profileImg
   };
 
   // Links
   const links = {
     github: "https://github.com/maiquocbinh1/IOT.git",
-    pdfReport: "/IOT.pdf",
+    pdfReport: "http://localhost:5000/IOT.pdf",
     postman: "https://documenter.postman.com/view/your-api-doc",
     swagger: "https://app.swaggerhub.com/apis/a-251/IOT/1.0.0"
   };
@@ -37,7 +38,7 @@ const Profile = () => {
         <div className="profile-card">
           {/* Profile Picture */}
           <div className="profile-picture">
-            <img src="/profile.png" alt="Mai Quốc Bình" />
+            <img src={profileData.profileImage} alt="Mai Quốc Bình" />
           </div>
           
           {/* User Info */}

@@ -88,6 +88,23 @@ const COMMAND_TOPIC = 'iot/led/control';
 const STATUS_TOPIC = 'iot/led/status';
 
 let currentLedStatus = { led1: 'off', led2: 'off', led3: 'off' };
+let recentCommands = []; // keep last 3 desired commands
+
+function pushRecentCommand(device, action) {
+  const entry = { device, action, ts: Date.now() };
+  recentCommands.unshift(entry);
+  if (recentCommands.length > 3) recentCommands = recentCommands.slice(0, 3);
+}
+
+function publishRetainedSnapshot() {
+  try {
+    const payload = {
+      state: currentLedStatus,
+      recent: recentCommands
+    };
+    mqttClient.publish(COMMAND_TOPIC, JSON.stringify(payload), { retain: true });
+  } catch {}
+}
 
 const mqttClient = mqtt.connect(mqttBrokerUrl, {
   username: process.env.MQTT_USERNAME || 'binh',
@@ -210,6 +227,8 @@ mqttClient.on('message', async (topic, message) => {
         ws.send(JSON.stringify(ledStatusPayload));
       }
     });
+  // Also publish a retained JSON snapshot (state + last 3 commands) on the same control topic
+  publishRetainedSnapshot();
   }
 });
 //api lấy dữ liệu cảm biến mới nhất
@@ -282,11 +301,16 @@ app.post('/api/control', (req, res) => {
     let published = false;
     if (isMqttConnected) {
       try {
+        // 1) Immediate command for compatibility (NOT retained): led1on/led2off/...
         mqttClient.publish(COMMAND_TOPIC, command, (pubErr) => {
           if (pubErr) {
             console.warn('Không thể gửi lệnh MQTT:', pubErr.message);
           }
         });
+        // 2) Update snapshot/state and publish retained JSON to the SAME topic
+        currentLedStatus[normalizedDevice] = normalizedAction; // desired
+        pushRecentCommand(normalizedDevice, normalizedAction);
+        publishRetainedSnapshot();
         published = true;
       } catch (e) {
         console.warn('MQTT publish exception:', e.message);

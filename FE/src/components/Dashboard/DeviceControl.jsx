@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './DeviceControl.css';
 import apiService from '../../services/api';
-import webSocketService from '../../services/websocket';
 
 // Map friendly names in FE to backend-understood device ids
 const mapDeviceNameToBackend = (name) => {
@@ -26,113 +25,40 @@ const normalizeAction = (actionBoolOrString) => {
   return 'off';
 };
 
-const DeviceControl = () => {
+const DeviceControl = ({ initialStatus, isConnected }) => {
   const [devices, setDevices] = useState({
     fan: false,
     airConditioner: false,
     light: false
   });
   const [loading, setLoading] = useState(false);
+  const [loadingDevice, setLoadingDevice] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [hardwareConnected, setHardwareConnected] = useState(true);
-  const [esp32Connected, setEsp32Connected] = useState(false); // Start with false, will be updated by WebSocket
-  const [savedDeviceStates, setSavedDeviceStates] = useState(null);
+  const [esp32Connected, setEsp32Connected] = useState(!!isConnected);
+  const prevConnectedRef = useRef(!!isConnected);
 
-  // Initialize WebSocket connection and load device status
+  // Reflect prop changes
   useEffect(() => {
-    // Connect to WebSocket
-    const connectWebSocket = () => {
-      try {
-        webSocketService.connect();
-        setWsConnected(true);
-        console.log('WebSocket connected for device control');
-      } catch (error) {
-        console.error('WebSocket connection failed:', error);
-        setWsConnected(false);
-      }
-    };
-
-           // Load initial device status and connection status
-           const loadDeviceStatus = async () => {
-             try {
-               // Get connection status from API
-               const connectionStatus = await apiService.getConnectionStatus();
-               console.log('Connection status from API:', connectionStatus);
-               setEsp32Connected(connectionStatus.esp32Connected);
-             } catch (err) {
-               console.error('Error loading device status:', err);
-               // Keep default values
-             }
-           };
-
-    connectWebSocket();
-    loadDeviceStatus();
-
-    // Set up WebSocket listeners for connection status
-    let unsubscribeDataStatus, unsubscribeMqttStatus;
-    
-    try {
-      unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
-        console.log('ESP32 Data Status in DeviceControl:', data);
-        setEsp32Connected(data.isConnected);
-      });
-
-      unsubscribeMqttStatus = webSocketService.on('mqttStatus', (data) => {
-        console.log('MQTT Status in DeviceControl:', data);
-        // MQTT status can also indicate ESP32 connection
-        if (data.isConnected) {
-          setEsp32Connected(true);
-        }
-      });
-    } catch (error) {
-      console.error('Error setting up WebSocket listeners in DeviceControl:', error);
+    setEsp32Connected(!!isConnected);
+    // If hardware just reconnected, show a brief loading overlay then keep last known state
+    if (!!isConnected && !prevConnectedRef.current) {
+      setLoadingDevice('reconnect');
+      const t = setTimeout(() => setLoadingDevice(null), 1000);
+      return () => clearTimeout(t);
     }
+    prevConnectedRef.current = !!isConnected;
+  }, [isConnected]);
 
-    // Check ESP32 connection status periodically
-    const checkEsp32Connection = async () => {
-      try {
-        const connectionStatus = await apiService.getConnectionStatus();
-        console.log('Periodic ESP32 connection check:', connectionStatus);
-        setEsp32Connected(connectionStatus.esp32Connected);
-      } catch (error) {
-        console.error('Error checking ESP32 connection:', error);
-        setEsp32Connected(false);
-      }
-    };
-
-    // Check every 3 seconds
-    const connectionCheckInterval = setInterval(checkEsp32Connection, 3000);
-    checkEsp32Connection(); // Initial check
-
-           // Listen for LED status updates
-           const unsubscribeLEDStatus = webSocketService.on('ledStatus', (data) => {
-             console.log('Received LED status update:', data);
-             
-             // Map device status to device states
-             setDevices(prev => ({
-               ...prev,
-               fan: data.Fan || data.fan || false,
-               airConditioner: data['Air Conditioner'] || data.airConditioner || false,
-               light: data.Light || data.light || false
-             }));
-           });
-
-    // Listen for WebSocket connection status
-    const unsubscribeConnection = webSocketService.on('connection', (data) => {
-      setWsConnected(data.status === 'connected');
-    });
-
-    // Cleanup
-    return () => {
-      unsubscribeLEDStatus();
-      unsubscribeConnection();
-      unsubscribeDataStatus();
-      unsubscribeMqttStatus();
-      clearInterval(connectionCheckInterval);
-    };
-  }, [hardwareConnected, devices, savedDeviceStates]);
+  useEffect(() => {
+    if (initialStatus) {
+      setDevices({
+        fan: initialStatus.led1 === 'on' || initialStatus.led1 === true,
+        airConditioner: initialStatus.led2 === 'on' || initialStatus.led2 === true,
+        light: initialStatus.led3 === 'on' || initialStatus.led3 === true
+      });
+    }
+  }, [initialStatus]);
 
   // Function to turn off all devices
   const turnOffAllDevices = async () => {
@@ -203,6 +129,7 @@ const DeviceControl = () => {
 
     try {
       setLoading(true);
+      setLoadingDevice(deviceName);
       setError(null);
 
       const newStatus = !devices[deviceName];
@@ -215,11 +142,8 @@ const DeviceControl = () => {
                             deviceName === 'airConditioner' ? 'Air Conditioner' : 
                             'Light';
       
-      // Update local state immediately for better UX
-      setDevices(prev => ({
-        ...prev,
-        [deviceName]: newStatus
-      }));
+      // Show loading screen for 1s before issuing command
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Send command via API
       try {
@@ -228,6 +152,11 @@ const DeviceControl = () => {
         console.log('✅ Device control API response:', response);
         
         if (response && response.success) {
+          // Update local state after successful API (actual status will also be corrected by WS)
+          setDevices(prev => ({
+            ...prev,
+            [deviceName]: newStatus
+          }));
           setSuccess(`${userDisplayName} turned ${newStatus ? 'ON' : 'OFF'} successfully!`);
           setError(null);
           // Clear success message after 3 seconds
@@ -250,18 +179,20 @@ const DeviceControl = () => {
       console.error('Error controlling device:', err);
       setError(`Failed to control ${userDisplayName}`);
       
-      // Revert the state change
-      setDevices(prev => ({
-        ...prev,
-        [deviceName]: !prev[deviceName]
-      }));
+      // Keep previous state (no change)
     } finally {
       setLoading(false);
+      setLoadingDevice(null);
     }
   };
 
   return (
-    <div className="device-control">
+    <div className="device-control" style={{position:'relative'}}>
+      {loadingDevice && (
+        <div style={{position:'absolute', inset:0, background:'rgba(255,255,255,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2}}>
+          <div className="loading-spinner"></div>
+        </div>
+      )}
       <h2 className="section-title">Device Control</h2>
       {!esp32Connected && (
         <div style={{
@@ -277,7 +208,7 @@ const DeviceControl = () => {
           ⚠️ ESP32 Disconnected - Device controls are disabled
         </div>
       )}
-      <div className="devices-grid">
+      <div className="devices-grid" style={{pointerEvents: loadingDevice ? 'none' : 'auto', opacity: loadingDevice ? 0.7 : 1}}>
         <div className={`device-card ${!esp32Connected ? 'disconnected' : ''}`}>
           <div className={`device-icon fan-icon ${devices.fan ? 'spinning' : ''}`}>
             <div className="fan-blades">
