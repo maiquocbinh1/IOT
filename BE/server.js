@@ -195,8 +195,20 @@ mqttClient.on('message', async (topic, message) => {
         }
       });
     }
-
-    // No WebSocket LED status broadcast to keep behavior as before
+    // Broadcast updated LED status to all WS clients
+    const ledStatusPayload = {
+      type: 'LED_STATUS',
+      status: {
+        led1: currentLedStatus.led1,
+        led2: currentLedStatus.led2,
+        led3: currentLedStatus.led3
+      }
+    };
+    wss.clients.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(ledStatusPayload));
+      }
+    });
   }
 });
 //api lấy dữ liệu cảm biến mới nhất
@@ -225,15 +237,7 @@ app.get('/api/sensor-data', (req, res) => {
   });
 });
 
-//api kiểm tra trạng thái kết nối
-app.get('/api/connection-status', (req, res) => {
-  res.json({
-    esp32Connected: isEsp32DataConnected,
-    mqttConnected: isMqttConnected,
-    lastDataTimestamp: lastDataTimestamp,
-    timeSinceLastData: Date.now() - lastDataTimestamp
-  });
-});
+
 
 //api điều khiển đèn
 app.post('/api/control', (req, res) => {
@@ -287,8 +291,7 @@ app.get('/api/data', (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 5;
   const offset = (page - 1) * limit;
-  const filterType = req.query.filterType;
-  const searchQuery = req.query.searchQuery;
+  const { searchQuery, filterType } = req.query;
   const sortColumn = req.query.sortColumn;
   const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
 
@@ -298,16 +301,46 @@ app.get('/api/data', (req, res) => {
 
   let baseQuery = 'SELECT id, temperature, light, humidity, `time` FROM sensor_data';
   let countQuery = 'SELECT COUNT(*) as total FROM sensor_data';
-  let whereClause = '';
+
+  const whereClauses = [];
   const params = [];
 
-  if (searchQuery && filterType && filterType !== 'all' && allowedCols.includes(filterType)) {
-    whereClause = ` WHERE \`${filterType}\` LIKE ?`;
-    params.push(`%${searchQuery}%`);
+  if (searchQuery && filterType && filterType !== 'all') {
+    const ft = String(filterType).toLowerCase();
+    if (ft === 'time' || ft === 'timestamp') {
+      // search by date string (YYYY-MM-DD or prefix) using DATE_FORMAT for consistency
+      whereClauses.push('DATE_FORMAT(`time`, "%Y-%m-%d %H:%i:%s") LIKE ?');
+      params.push(`%${searchQuery}%`);
+    } else if (ft === 'id') {
+      const idVal = parseInt(searchQuery, 10);
+      if (!Number.isNaN(idVal)) {
+        whereClauses.push('`id` = ?');
+        params.push(idVal);
+      }
+    } else if (['temperature', 'humidity', 'light'].includes(ft)) {
+      const val = parseFloat(searchQuery);
+      if (!Number.isNaN(val)) {
+        // match numeric bucket: x <= value < x+1 for integer-like search
+        whereClauses.push(`\`${ft}\` >= ? AND \`${ft}\` < ?`);
+        params.push(val, val + 1);
+      } else {
+        // fallback to LIKE if non-numeric provided
+        whereClauses.push(`CAST(\`${ft}\` AS CHAR) LIKE ?`);
+        params.push(`%${searchQuery}%`);
+      }
+    } else if (allowedCols.includes(ft)) {
+      whereClauses.push(`\`${ft}\` LIKE ?`);
+      params.push(`%${searchQuery}%`);
+    }
   }
 
-  baseQuery += whereClause + ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
-  countQuery += whereClause;
+  if (whereClauses.length > 0) {
+    const whereStr = ' WHERE ' + whereClauses.join(' AND ');
+    baseQuery += whereStr;
+    countQuery += whereStr;
+  }
+
+  baseQuery += ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
 
   // Use callback-based query
   pool.query(countQuery, params, (err, countResults) => {

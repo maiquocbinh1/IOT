@@ -325,11 +325,19 @@ const DataSensor = () => {
           <option>Humidity</option>
           <option>Light</option>
         </select>
+
+        <button
+          className="search-btn"
+          onClick={() => {
+            setCurrentPage(1);
+            fetchSensorData();
+          }}
+          style={{marginLeft: '10px', padding: '8px 16px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}
+        >
+          Search
+        </button>
         
         <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
-        <button className="refresh-btn" onClick={fetchSensorData} style={{marginLeft: '10px', padding: '8px 16px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer'}}>
-          🔄 Refresh
-        </button>
         {timeSearch && (
           <button 
             className="clear-time-btn"
