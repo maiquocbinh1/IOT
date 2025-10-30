@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
+const path = require('path');
 const mqtt = require('mqtt');
 require('dotenv').config();
 
@@ -237,6 +238,17 @@ app.get('/api/sensor-data', (req, res) => {
   });
 });
 
+// serve project-level IOT.pdf for FE download
+app.get('/IOT.pdf', (req, res) => {
+  const pdfPath = path.join(__dirname, '..', 'IOT.pdf');
+  res.sendFile(pdfPath, (err) => {
+    if (err) {
+      console.error('Error sending IOT.pdf:', err);
+      res.status(err.statusCode || 500).end();
+    }
+  });
+});
+
 
 
 //api điều khiển đèn
@@ -289,7 +301,7 @@ app.post('/api/control', (req, res) => {
 //api phân trang lấy dữ liệu cảm biến
 app.get('/api/data', (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 5;
+  const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
   const { searchQuery, filterType } = req.query;
   const sortColumn = req.query.sortColumn;
@@ -308,31 +320,27 @@ app.get('/api/data', (req, res) => {
   if (searchQuery && filterType && filterType !== 'all') {
     const ft = String(filterType).toLowerCase();
     if (ft === 'time' || ft === 'timestamp') {
-      // search by date string (YYYY-MM-DD or prefix) using DATE_FORMAT for consistency
-      whereClauses.push('DATE_FORMAT(`time`, "%Y-%m-%d %H:%i:%s") LIKE ?');
-      params.push(`%${searchQuery}%`);
-    } else if (ft === 'id') {
-      const idVal = parseInt(searchQuery, 10);
-      if (!Number.isNaN(idVal)) {
-        whereClauses.push('`id` = ?');
-        params.push(idVal);
+      // exact date match (YYYY-MM-DD)
+      whereClauses.push('DATE(`time`) = ?');
+      params.push(searchQuery);
+    } else if (ft === 'id' || ft === 'light') {
+      // integer exact match
+      const intVal = parseInt(searchQuery, 10);
+      if (!Number.isNaN(intVal)) {
+        whereClauses.push(`\`${ft}\` = ?`);
+        params.push(intVal);
       }
-    } else if (['temperature', 'humidity', 'light'].includes(ft)) {
+    } else if (ft === 'temperature' || ft === 'humidity') {
+      // precise match by two decimals
       const val = parseFloat(searchQuery);
       if (!Number.isNaN(val)) {
-        // match numeric bucket: x <= value < x+1 for integer-like search
-        whereClauses.push(`\`${ft}\` >= ? AND \`${ft}\` < ?`);
-        params.push(val, val + 1);
-      } else {
-        // fallback to LIKE if non-numeric provided
-        whereClauses.push(`CAST(\`${ft}\` AS CHAR) LIKE ?`);
-        params.push(`%${searchQuery}%`);
+        whereClauses.push(`ROUND(\`${ft}\`, 2) = ROUND(?, 2)`);
+        params.push(val);
       }
-    } else if (allowedCols.includes(ft)) {
-      whereClauses.push(`\`${ft}\` LIKE ?`);
-      params.push(`%${searchQuery}%`);
     }
   }
+
+  // No extra AND date filter – only use the primary filterType above
 
   if (whereClauses.length > 0) {
     const whereStr = ' WHERE ' + whereClauses.join(' AND ');
@@ -372,7 +380,7 @@ app.get('/api/data', (req, res) => {
 
 app.get('/api/actions/history', (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 5;
+  const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
   const filterType = req.query.filterType;
   const searchQuery = req.query.searchQuery;
@@ -390,11 +398,12 @@ app.get('/api/actions/history', (req, res) => {
 
   if (searchQuery && filterType && filterType !== 'all' && allowedCols.includes(filterType)) {
     if (filterType === 'timestamp') {
-      whereClause = ' WHERE DATE_FORMAT(timestamp, "%Y-%m-%d %H:%i:%s") LIKE ?';
+      whereClause = ' WHERE DATE(`timestamp`) = ?';
+      params.push(searchQuery);
     } else {
       whereClause = ` WHERE \`${filterType}\` LIKE ?`;
+      params.push(`%${searchQuery}%`);
     }
-    params.push(`%${searchQuery}%`);
   }
 
   baseQuery += whereClause + ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;

@@ -40,31 +40,39 @@ const DataSensor = () => {
       // Build search parameters - default to newest first
       const params = {
         page: currentPage,
-        limit: 10,
+        limit: 11,
         sortColumn: sortField || "time",
         sortDirection: sortDirection || "desc"
       };
 
-      // Handle search - ID search and specific value search
+      // Handle search
       if (searchTerm.trim()) {
-        // Check if search term is a number (ID search)
-        if (!isNaN(searchTerm.trim()) && searchTerm.trim() !== '') {
-          params.searchQuery = searchTerm.trim();
-          params.filterType = 'id';
+        const term = searchTerm.trim();
+        const isNumeric = !isNaN(term);
+        const ft = filterType || 'All';
+
+        if (ft === 'All') {
+          // Only treat numeric as ID when filter is All
+          if (isNumeric) {
+            params.filterType = 'id';
+            params.searchQuery = term;
+          } else {
+            // text search under All → backend has no text fields; fall back to latest
+            // leave params.filterType undefined so API returns latest data
+          }
         } else {
-          // Search by specific values (temperature, humidity, light)
-          params.searchQuery = searchTerm.trim();
-          params.filterType = filterType === 'All' ? undefined : filterType.toLowerCase();
-          // Keep newest first for value searches too
-          params.sortColumn = filterType === 'All' ? 'time' : filterType.toLowerCase();
+          // Respect explicit column selection (temperature/humidity/light)
+          params.filterType = ft.toLowerCase();
+          params.searchQuery = term;
+          params.sortColumn = params.filterType;
           params.sortDirection = 'desc';
         }
       }
 
-      // Add time range search if provided
+      // Date filter uses main search params expected by backend (no AND)
       if (timeSearch.trim()) {
-        params.searchQuery = timeSearch.trim();
         params.filterType = 'timestamp';
+        params.searchQuery = timeSearch.trim();
       }
 
       const response = await apiService.getSensorData(params);
@@ -105,35 +113,31 @@ const DataSensor = () => {
   // Auto-refresh data every 10 seconds (only when ESP32 connected)
   useEffect(() => {
     const interval = setInterval(() => {
-      // Only auto-refresh if ESP32 is connected and on first page
-      if (currentPage === 1) {
+      // Auto-refresh only when no active filters to avoid disrupting user search
+      const noActiveFilter = (!searchTerm || searchTerm.trim() === '') && (!timeSearch || timeSearch.trim() === '') && (filterType === 'All');
+      if (currentPage === 1 && noActiveFilter) {
         fetchSensorData();
       }
     }, 10000);
-    
     return () => clearInterval(interval);
-  }, [currentPage]);
+  }, [currentPage, searchTerm, timeSearch, filterType, fetchSensorData]);
 
   // WebSocket listener for real-time data updates
   useEffect(() => {
     let unsubscribeSensorData, unsubscribeDataStatus;
-    
     try {
-      unsubscribeSensorData = webSocketService.on('sensorData', (newData) => {
-        console.log('Received real-time sensor data for DataSensor:', newData);
-        // Only refresh data when new sensor data arrives and ESP32 is connected
-        fetchSensorData();
+      unsubscribeSensorData = webSocketService.on('sensorData', () => {
+        // Respect current filters: do not override filtered view
+        const noActiveFilter = (!searchTerm || searchTerm.trim() === '') && (!timeSearch || timeSearch.trim() === '') && (filterType === 'All');
+        if (noActiveFilter) fetchSensorData();
       });
-
-      unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
-        console.log('ESP32 Data Status in DataSensor:', data);
-        // Refresh data when connection status changes
-        fetchSensorData();
+      unsubscribeDataStatus = webSocketService.on('dataStatus', () => {
+        const noActiveFilter = (!searchTerm || searchTerm.trim() === '') && (!timeSearch || timeSearch.trim() === '') && (filterType === 'All');
+        if (noActiveFilter) fetchSensorData();
       });
     } catch (error) {
       console.error('Error setting up WebSocket listeners in DataSensor:', error);
     }
-
     return () => {
       try {
         if (unsubscribeSensorData) unsubscribeSensorData();
@@ -142,7 +146,7 @@ const DataSensor = () => {
         console.error('Error cleaning up WebSocket listeners in DataSensor:', error);
       }
     };
-  }, [currentPage, searchTerm, timeSearch]);
+  }, [searchTerm, timeSearch, filterType, fetchSensorData]);
 
   // Handle sort
   const handleSort = (field) => {
@@ -354,9 +358,8 @@ const DataSensor = () => {
       {/* Individual Search Filters */}
       <div className="individual-filters">
         <div className="filter-group">
-          <label>Search Before Time:</label>
           <input
-            type="datetime-local"
+            type="date"
             placeholder="mm/dd/yyyy --:--"
             value={timeSearch}
             onChange={(e) => setTimeSearch(e.target.value)}

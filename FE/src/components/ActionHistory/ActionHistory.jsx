@@ -9,6 +9,7 @@ const ActionHistory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [timeSearch, setTimeSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [actionFilter, setActionFilter] = useState('any'); 
   const [actionHistoryData, setActionHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -33,31 +34,30 @@ const ActionHistory = () => {
         sortDirection: sortDirection
       };
 
-      // Handle search - ID search and device/action search
-      if (searchTerm.trim()) {
-        // Check if search term is a number (ID search)
-        if (!isNaN(searchTerm.trim()) && searchTerm.trim() !== '') {
-          params.searchQuery = searchTerm.trim();
-          params.filterType = 'id';
-        } else {
-          // Search by device/action based on filter type
-          params.searchQuery = searchTerm.trim();
-          if (filterType === 'LED1') {
-            params.filterType = 'device_name';
-          } else if (filterType === 'LED2') {
-            params.filterType = 'device_name';
-          } else if (filterType === 'LED3') {
-            params.filterType = 'device_name';
-          } else {
-            params.filterType = 'device_name';
-          }
-        }
-      }
+      // Primary filter to minimize payload (priority: time > action > device > id)
+      const dateStr = timeSearch.trim();
+      const term = searchTerm.trim();
+      const deviceKey = filterType === 'LED1' ? 'led1' : filterType === 'LED2' ? 'led2' : filterType === 'LED3' ? 'led3' : null;
 
-      // Add time range search if provided
-      if (timeSearch.trim()) {
-        params.searchQuery = timeSearch.trim();
+      if (dateStr) {
+        if (isNaN(Date.parse(dateStr))) {
+          setActionHistoryData([]);
+          setTotalPages(0);
+          setTotalRecords(0);
+          setLoading(false);
+          return;
+        }
         params.filterType = 'timestamp';
+        params.searchQuery = dateStr;
+      } else if (actionFilter !== 'any') {
+        params.filterType = 'action';
+        params.searchQuery = actionFilter;
+      } else if (deviceKey) {
+        params.filterType = 'device_name';
+        params.searchQuery = deviceKey;
+      } else if (term && !isNaN(term)) {
+        params.filterType = 'id';
+        params.searchQuery = term;
       }
 
       const response = await apiService.getActionHistory(params);
@@ -65,9 +65,30 @@ const ActionHistory = () => {
       console.log('ActionHistory API Response:', response);
       
       if (response.data) {
-        setActionHistoryData(response.data || []);
+        let rows = response.data || [];
+        // Normalize sort by latest first
+        rows.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        // Apply secondary filters client-side to combine Device + Action + Date consistently
+        if (deviceKey) rows = rows.filter(r => String(r.device_name || '').toLowerCase() === deviceKey);
+        if (actionFilter !== 'any') rows = rows.filter(r => String(r.action || '').toLowerCase() === actionFilter);
+        if (dateStr) {
+          rows = rows.filter(r => {
+            const d = new Date(r.timestamp);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const onlyDate = `${y}-${m}-${day}`;
+            return onlyDate === dateStr;
+          });
+        }
+        // When filterType = ALL and user enters a numeric ID, enforce exact ID match client-side
+        if (filterType === 'ALL' && term && !isNaN(term)) {
+          const targetId = String(parseInt(term, 10));
+          rows = rows.filter(r => String(r.id) === targetId);
+        }
+        setActionHistoryData(rows);
         setTotalPages(response.pagination?.totalPages || 1);
-        setTotalRecords(response.pagination?.total || 0);
+        setTotalRecords((response.pagination?.total || rows.length));
         setError(null); // Clear any previous errors
       } else {
         setError('Failed to fetch action history');
@@ -129,16 +150,16 @@ const ActionHistory = () => {
     fetchActionHistory();
   }, [currentPage, filterType, timeSearch, searchTerm, sortField, sortDirection]);
 
-  // Auto-refresh data every 15 seconds
+  // Auto-refresh data every 15 seconds (only when no active filters)
   useEffect(() => {
     const interval = setInterval(() => {
-      if (currentPage === 1) { // Only auto-refresh on first page
-        fetchActionHistory();
-      }
+      const noActiveFilter = (filterType === 'ALL' && searchTerm.trim() === '' && timeSearch.trim() === '') ||
+                              (filterType !== 'ALL' && searchTerm.trim() === '' && timeSearch.trim() === '' && actionFilter === 'any');
+      if (currentPage === 1 && noActiveFilter) fetchActionHistory();
     }, 15000);
     
     return () => clearInterval(interval);
-  }, [currentPage]);
+  }, [currentPage, filterType, actionFilter, searchTerm, timeSearch]);
 
   // WebSocket listener for real-time data updates
   useEffect(() => {
@@ -148,6 +169,7 @@ const ActionHistory = () => {
       unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
         console.log('ESP32 Data Status in ActionHistory:', data);
       });
+
     } catch (error) {
       console.error('Error setting up WebSocket listeners in ActionHistory:', error);
     }
@@ -252,6 +274,14 @@ const ActionHistory = () => {
     return pages;
   };
 
+  const renderDeviceFriendly = (name) => {
+    const n = String(name || '').toLowerCase();
+    if (n === 'led1' || n === 'fan') return 'Fan';
+    if (n === 'led2' || n === 'air_conditioner' || n === 'air conditioner' || n === 'ac') return 'Air Conditioner';
+    if (n === 'led3' || n === 'light' || n === 'led') return 'Light';
+    return name || '-';
+  };
+
   return (
     <div className="action-history-page">
       {/* Header */}
@@ -271,15 +301,16 @@ const ActionHistory = () => {
           />
         </div>
         
-        <div className="id-search-wrapper">
-          <span className="search-icon">#</span>
-          <input
-            type="text"
-            placeholder="Search by ID"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+        {/* Action ON/OFF only when a device is selected */}
+        {filterType !== 'ALL' && (
+          <div className="filter-dropdown" style={{marginLeft:'8px'}}>
+            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+              <option value="any">Any</option>
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
+          </div>
+        )}
         
         {/* Filter dropdown */}
         <div className="filter-dropdown">
@@ -308,9 +339,8 @@ const ActionHistory = () => {
       {/* Individual Search Filters */}
       <div className="individual-filters">
         <div className="filter-group">
-          <label>Search Before Time:</label>
           <input
-            type="datetime-local"
+            type="date"
             placeholder="mm/dd/yyyy --:--"
             value={timeSearch}
             onChange={handleTimeSearchChange}
@@ -381,12 +411,7 @@ const ActionHistory = () => {
                       <span className="id-badge">#{item.id}</span>
                     </td>
                     {filterType === 'ALL' && (
-                      <td className="device-cell">
-                        {item.device_name === 'LED1' ? 'Fan' : 
-                         item.device_name === 'LED2' ? 'Air Conditioner' : 
-                         item.device_name === 'LED3' ? 'Light' : 
-                         item.device_name}
-                      </td>
+                      <td className="device-cell">{renderDeviceFriendly(item.device_name)}</td>
                     )}
                     {filterType === 'ALL' && (
                       <td className="action-cell">{item.action.toUpperCase()}</td>
