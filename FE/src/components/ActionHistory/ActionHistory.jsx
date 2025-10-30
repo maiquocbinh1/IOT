@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BsSearch } from 'react-icons/bs';
 import './ActionHistory.css';
 import apiService from '../../services/api';
 import webSocketService from '../../services/websocket';
@@ -7,7 +8,6 @@ const ActionHistory = () => {
   // State Management
   const [filterType, setFilterType] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [timeSearch, setTimeSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [actionFilter, setActionFilter] = useState('any'); 
   const [actionHistoryData, setActionHistoryData] = useState([]);
@@ -34,21 +34,25 @@ const ActionHistory = () => {
         sortDirection: sortDirection
       };
 
-      // Primary filter to minimize payload (priority: time > action > device > id)
-      const dateStr = timeSearch.trim();
+      // Primary filter to minimize payload (priority: date-in-search > action > device > id)
       const term = searchTerm.trim();
       const deviceKey = filterType === 'LED1' ? 'led1' : filterType === 'LED2' ? 'led2' : filterType === 'LED3' ? 'led3' : null;
 
-      if (dateStr) {
-        if (isNaN(Date.parse(dateStr))) {
-          setActionHistoryData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-          setLoading(false);
-          return;
-        }
+      // If user types a date like YYYY-MM-DD (or DD/MM/YYYY -> convert), use timestamp filter
+      let dateCandidate = null;
+      const m = term.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (/^\d{4}-\d{2}-\d{2}/.test(term)) {
+        dateCandidate = term.slice(0, 10);
+      } else if (m) {
+        const dd = m[1].padStart(2, '0');
+        const mm = m[2].padStart(2, '0');
+        const yyyy = m[3];
+        dateCandidate = `${yyyy}-${mm}-${dd}`;
+      }
+
+      if (dateCandidate) {
         params.filterType = 'timestamp';
-        params.searchQuery = dateStr;
+        params.searchQuery = dateCandidate;
       } else if (actionFilter !== 'any') {
         params.filterType = 'action';
         params.searchQuery = actionFilter;
@@ -68,18 +72,18 @@ const ActionHistory = () => {
         let rows = response.data || [];
         // Normalize sort by latest first
         rows.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-        // Apply secondary filters client-side to combine Device + Action + Date consistently
+        // Apply secondary filters client-side to combine Device consistently
         if (deviceKey) rows = rows.filter(r => String(r.device_name || '').toLowerCase() === deviceKey);
-        if (actionFilter !== 'any') rows = rows.filter(r => String(r.action || '').toLowerCase() === actionFilter);
-        if (dateStr) {
-          rows = rows.filter(r => {
-            const d = new Date(r.timestamp);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const onlyDate = `${y}-${m}-${day}`;
-            return onlyDate === dateStr;
-          });
+        // If Action filter ON/OFF is chosen, show devices that are currently ON/OFF
+        if (actionFilter !== 'any') {
+          const latestPerDevice = new Map();
+          for (const r of rows) {
+            const dev = String(r.device_name || '').toLowerCase();
+            if (!latestPerDevice.has(dev)) {
+              latestPerDevice.set(dev, r); // rows are sorted desc => first is latest
+            }
+          }
+          rows = Array.from(latestPerDevice.values()).filter(r => String(r.action || '').toLowerCase() === actionFilter);
         }
         // When filterType = ALL and user enters a numeric ID, enforce exact ID match client-side
         if (filterType === 'ALL' && term && !isNaN(term)) {
@@ -92,8 +96,7 @@ const ActionHistory = () => {
         setError(null); // Clear any previous errors
       } else {
         setError('Failed to fetch action history');
-        // Only use fallback data if no time search is active
-        if (!timeSearch) {
+        // Only use fallback data
           setActionHistoryData([
             { id: 2051, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:24.000Z", description: "Sample data" },
             { id: 2050, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:23.000Z", description: "Sample data" },
@@ -103,18 +106,12 @@ const ActionHistory = () => {
           ]);
           setTotalPages(1);
           setTotalRecords(5);
-        } else {
-          // If time search is active and no results, show empty
-          setActionHistoryData([]);
-          setTotalPages(0);
-          setTotalRecords(0);
-        }
+        
       }
     } catch (err) {
       console.error('Error fetching action history:', err);
       setError('Failed to fetch action history');
-      // Only use fallback data if no time search is active
-      if (!timeSearch) {
+      // Only use fallback data
         setActionHistoryData([
           { id: "#2051", device: "AIR_CONDITIONER", action: "ON", time: "14:20:11 24/08/2025", status: "Success" },
           { id: "#2050", device: "LED", action: "OFF", time: "14:05:47 24/08/2025", status: "Fail" },
@@ -124,12 +121,7 @@ const ActionHistory = () => {
         ]);
         setTotalPages(1);
         setTotalRecords(5);
-      } else {
-        // If time search is active and error, show empty
-        setActionHistoryData([]);
-        setTotalPages(0);
-        setTotalRecords(0);
-      }
+      
     } finally {
       setLoading(false);
     }
@@ -148,18 +140,18 @@ const ActionHistory = () => {
   // Load data on component mount and when filters change
   useEffect(() => {
     fetchActionHistory();
-  }, [currentPage, filterType, timeSearch, searchTerm, sortField, sortDirection]);
+  }, [currentPage, filterType, searchTerm, sortField, sortDirection]);
 
   // Auto-refresh data every 15 seconds (only when no active filters)
   useEffect(() => {
     const interval = setInterval(() => {
-      const noActiveFilter = (filterType === 'ALL' && searchTerm.trim() === '' && timeSearch.trim() === '') ||
-                              (filterType !== 'ALL' && searchTerm.trim() === '' && timeSearch.trim() === '' && actionFilter === 'any');
+      const noActiveFilter = (filterType === 'ALL' && searchTerm.trim() === '') ||
+                              (filterType !== 'ALL' && searchTerm.trim() === '' && actionFilter === 'any');
       if (currentPage === 1 && noActiveFilter) fetchActionHistory();
     }, 15000);
     
     return () => clearInterval(interval);
-  }, [currentPage, filterType, actionFilter, searchTerm, timeSearch]);
+  }, [currentPage, filterType, actionFilter, searchTerm]);
 
   // WebSocket listener for real-time data updates
   useEffect(() => {
@@ -191,10 +183,6 @@ const ActionHistory = () => {
 
   const handleFilterChange = (e) => {
     setFilterType(e.target.value);
-  };
-
-  const handleTimeSearchChange = (e) => {
-    setTimeSearch(e.target.value);
   };
 
   const handleSearchTermChange = (e) => {
@@ -289,70 +277,59 @@ const ActionHistory = () => {
         <h1 className="page-title">Action History</h1>
       </div>
       
-      {/* Search and Filter Section */}
-      <div className="search-filter-section">
-        <div className="search-wrapper">
-          <span className="search-icon">🔍</span>
+      {/* Search and Filter Section - single row like DataSensor */}
+      <div className="search-filter-section" style={{display:'flex', gap:'12px', alignItems:'center', flexWrap:'wrap'}}>
+        <div className="search-wrapper" style={{flex:1, display:'flex', alignItems:'center'}}>
+          <BsSearch className="search-icon" />
           <input
             type="text"
-            placeholder="Search by ID or device/action (shows from low to high)"
+            placeholder="Search by ID or date/time (YYYY-MM-DD)"
             value={searchTerm}
             onChange={handleSearchTermChange}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                setCurrentPage(1);
+                fetchActionHistory();
+              }
+            }}
           />
         </div>
-        
-        {/* Action ON/OFF only when a device is selected */}
-        {filterType !== 'ALL' && (
-          <div className="filter-dropdown" style={{marginLeft:'8px'}}>
-            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
-              <option value="any">Any</option>
-              <option value="on">ON</option>
-              <option value="off">OFF</option>
-            </select>
-          </div>
-        )}
-        
-        {/* Filter dropdown */}
+
+        {/* Device filter */}
         <div className="filter-dropdown">
-          <select value={filterType} onChange={handleFilterChange}>
+          <select value={filterType} onChange={(e)=>{ handleFilterChange(e); setCurrentPage(1); }}>
             <option value="ALL">ALL</option>
             <option value="LED1">Fan</option>
             <option value="LED2">Air Conditioner</option>
             <option value="LED3">Light</option>
           </select>
         </div>
-        
-        {timeSearch && (
-          <button 
-            className="clear-time-btn"
-            onClick={() => {
-              setTimeSearch('');
-              fetchActionHistory();
-            }}
-          >
-            Clear Time Filter
-          </button>
-        )}
-        
-      </div>
 
-      {/* Individual Search Filters */}
-      <div className="individual-filters">
-        <div className="filter-group">
-          <input
-            type="date"
-            placeholder="mm/dd/yyyy --:--"
-            value={timeSearch}
-            onChange={handleTimeSearchChange}
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                fetchActionHistory();
-              }
-            }}
-            className="filter-input"
-          />
+        {/* Action filter always visible */}
+        <div className="filter-dropdown">
+          <select value={actionFilter} onChange={(e)=>{ setActionFilter(e.target.value); setCurrentPage(1); }}>
+            <option value="any">Any</option>
+            <option value="on">ON</option>
+            <option value="off">OFF</option>
+          </select>
+        </div>
+
+        {/* Sort controls (consistent with DataSensor layout) */}
+        <div className="sort-controls" style={{display:'flex', gap:'8px'}}>
+          <select value={sortField} onChange={(e)=>{ setSortField(e.target.value); setCurrentPage(1); }}>
+            <option value="timestamp">Sort by Time</option>
+            <option value="id">Sort by ID</option>
+            <option value="device_name">Sort by Device</option>
+            <option value="action">Sort by Action</option>
+          </select>
+          <select value={sortDirection} onChange={(e)=>{ setSortDirection(e.target.value); setCurrentPage(1); }}>
+            <option value="desc">Descending</option>
+            <option value="asc">Ascending</option>
+          </select>
         </div>
       </div>
+
+      {/* Date filter removed as requested */}
 
       {/* Action History Table */}
       <div className="table-container">

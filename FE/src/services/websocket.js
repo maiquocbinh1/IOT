@@ -64,6 +64,10 @@ class WebSocketService {
                         console.log('Data Status:', data);
                         this.emit('dataStatus', data);
                         break;
+                    case 'LED_STATUS':
+                        this.emit('LED_STATUS', data);
+                        this.emit('ledStatus', data);
+                        break;
                     // No LED_STATUS handling; revert to previous behavior
                     case 'SENSOR_DATA':
                         console.log('Sensor Data:', data);

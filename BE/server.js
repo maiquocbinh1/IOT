@@ -302,69 +302,180 @@ app.post('/api/control', (req, res) => {
     return res.json({ success: true, published, message: `Đã xử lý lệnh ${normalizedAction} cho ${normalizedDevice}` });
   });
 });
-//api phân trang lấy dữ liệu cảm biến (ĐÃ NÂNG CẤP VỚI FILTERTYPE)
+//api phân trang lấy dữ liệu cảm biến (nâng cấp filterType độc lập + time range + columnFilter)
 app.get('/api/data', (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 11;
+  const limit = parseInt(req.query.limit) || 13;
   const offset = (page - 1) * limit;
 
-  // Lấy tất cả các tham số lọc từ frontend
-  const { searchQuery, filterType = 'All', timeSearch } = req.query;
-  const sortColumn = req.query.sortColumn || 'time';
-  const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
+  // Tham số
+  const rawSearchQuery = req.query.searchQuery;
+  const rawFilterType = (req.query.filterType || 'all').toString().toLowerCase();
+  const rawSortColumn = (req.query.sortBy || req.query.sortColumn || 'time').toString().toLowerCase();
+  const sortDirection = (req.query.order || req.query.sortDirection || 'desc').toString().toLowerCase();
+  const timeSearch = req.query.timeSearch; // YYYY-MM-DD
+  const startDate = req.query.startDate;   // YYYY-MM-DD
+  const endDate = req.query.endDate;       // YYYY-MM-DD
+  const timeExactRaw = req.query.timeExact; // YYYY-MM-DD HH:mm:ss or YYYY-MM-DDTHH:mm:ss
+  const columnFilter = (req.query.columnFilter || '').toString().toLowerCase();
+  // New query aliases
+  const sensorId = req.query.sensorId;
+  const tem = req.query.tem;
+  const hum = req.query.hum;
+  const lum = req.query.lum;
+  const timeAlias = req.query.time; // can be date or datetime
+  const allAlias = req.query.all;
 
   const allowedCols = ['id', 'temperature', 'light', 'humidity', 'time'];
-  const sortColSafe = allowedCols.includes(sortColumn) ? `\`${sortColumn}\`` : '`time`';
+  const sortColSafe = allowedCols.includes(rawSortColumn) ? `\`${rawSortColumn}\`` : '`time`';
   const sortDirSafe = sortDirection === 'asc' ? 'ASC' : 'DESC';
 
-  let whereClauses = [];
+  // Lựa chọn cột trả về
+  const selectedMetric = ['temperature', 'humidity', 'light'].includes(columnFilter) ? columnFilter : null;
+  const selectColumns = selectedMetric ? `id, \`${selectedMetric}\` as ${selectedMetric}, \`time\`` : 'id, temperature, light, humidity, `time`';
+
+  const whereClauses = [];
   const params = [];
 
-  // 1. Xử lý tìm kiếm theo từ khóa và filterType
-  if (searchQuery && searchQuery.trim() !== '') {
-    const term = searchQuery.trim();
-    const type = filterType.toLowerCase();
+  // Nếu có timeExact, ưu tiên lọc chính xác theo giây và bỏ các range khác
+  let hasTimeExact = false;
+  let normalizedTimeExact = '';
+  if (typeof timeExactRaw === 'string' && timeExactRaw.trim() !== '') {
+    hasTimeExact = true;
+    normalizedTimeExact = timeExactRaw.trim().replace('T', ' ').slice(0, 19); // 'YYYY-MM-DD HH:mm:ss'
+    // So khop chinh xac den giay, bo qua mili-giay/timezone lech
+    whereClauses.push('ABS(TIMESTAMPDIFF(SECOND, ?, `time`)) < 1');
+    params.push(normalizedTimeExact);
+    console.log('[API /api/data] timeExact detected:', normalizedTimeExact);
+  }
 
-    if (type === 'all' || type === '') {
-      // Tìm kiếm toàn cục
+  // 1) Range thời gian
+  if (!hasTimeExact) {
+    // Support alias "time"
+    if (typeof timeAlias === 'string' && timeAlias.trim() !== '') {
+      const normalized = timeAlias.trim().replace('T', ' ');
+      if (/\d{2}:\d{2}/.test(normalized)) {
+        whereClauses.push('ABS(TIMESTAMPDIFF(SECOND, ?, `time`)) < 1');
+        params.push(normalized.slice(0, 19));
+      } else {
+        whereClauses.push('DATE(`time`) = ?');
+        params.push(normalized.slice(0, 10));
+      }
+    }
+    if (timeSearch && String(timeSearch).trim() !== '') {
+      whereClauses.push('DATE(`time`) = ?');
+      params.push(String(timeSearch).trim());
+    } else if (startDate && endDate) {
+      whereClauses.push('DATE(`time`) BETWEEN ? AND ?');
+      params.push(String(startDate).trim(), String(endDate).trim());
+    } else if (startDate) {
+      whereClauses.push('DATE(`time`) >= ?');
+      params.push(String(startDate).trim());
+    } else if (endDate) {
+      whereClauses.push('DATE(`time`) <= ?');
+      params.push(String(endDate).trim());
+    }
+  }
+
+  // 2) Áp dụng filterType ngay cả khi không có searchQuery
+  if (allowedCols.includes(rawFilterType) && rawFilterType !== 'time') {
+    whereClauses.push(`\`${rawFilterType}\` IS NOT NULL`);
+  }
+
+  // 3) Tìm kiếm theo searchQuery
+  if (rawSearchQuery && String(rawSearchQuery).trim() !== '') {
+    const term = String(rawSearchQuery).trim();
+    const type = rawFilterType;
+    if (type === 'id') {
+      const idVal = parseInt(term, 10);
+      if (!Number.isNaN(idVal)) {
+        whereClauses.push('`id` = ?');
+        params.push(idVal);
+      }
+    } else if (allowedCols.includes(type) && type !== 'time') {
+      whereClauses.push(`CAST(\`${type}\` AS CHAR) LIKE ?`);
+      params.push(`%${term}%`);
+    } else {
       const searchTerm = `%${term}%`;
       whereClauses.push(`(CAST(id AS CHAR) LIKE ? OR CAST(temperature AS CHAR) LIKE ? OR CAST(humidity AS CHAR) LIKE ? OR CAST(light AS CHAR) LIKE ? OR \`time\` LIKE ?)`);
       params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
-    } else if (allowedCols.includes(type)) {
-      // Tìm kiếm trên một cột cụ thể
-      whereClauses.push(`\`${type}\` LIKE ?`);
-      params.push(`%${term}%`);
     }
   }
-  
-  // 2. Xử lý tìm kiếm theo ngày
-  if (timeSearch && timeSearch.trim() !== '') {
-      whereClauses.push('DATE(`time`) = ?');
-      params.push(timeSearch.trim());
+
+  // 4) Apply new simple filters: sensorId/tem/hum/lum
+  if (sensorId && !Number.isNaN(parseInt(sensorId, 10))) {
+    whereClauses.push('`id` = ?');
+    params.push(parseInt(sensorId, 10));
+  }
+  if (tem && !Number.isNaN(parseFloat(tem))) {
+    whereClauses.push('ROUND(`temperature`, 2) = ROUND(?, 2)');
+    params.push(parseFloat(tem));
+  }
+  if (hum && !Number.isNaN(parseFloat(hum))) {
+    whereClauses.push('ROUND(`humidity`, 2) = ROUND(?, 2)');
+    params.push(parseFloat(hum));
+  }
+  if (lum && !Number.isNaN(parseInt(lum, 10))) {
+    whereClauses.push('`light` = ?');
+    params.push(parseInt(lum, 10));
+  }
+
+  // 5) Global search alias: all
+  if (typeof allAlias === 'string' && allAlias.trim() !== '') {
+    const term = allAlias.trim();
+    const orParts = [];
+    const localParams = [];
+    const intVal = parseInt(term, 10);
+    const floatVal = parseFloat(term);
+    if (!Number.isNaN(intVal)) {
+      orParts.push('`id` = ?'); localParams.push(intVal);
+      orParts.push('`light` = ?'); localParams.push(intVal);
+    }
+    if (!Number.isNaN(floatVal)) {
+      orParts.push('ROUND(`temperature`, 2) = ROUND(?, 2)'); localParams.push(floatVal);
+      orParts.push('ROUND(`humidity`, 2) = ROUND(?, 2)'); localParams.push(floatVal);
+    }
+    const norm = term.replace('T', ' ');
+    if (/\d{2}:\d{2}/.test(norm)) {
+      orParts.push('ABS(TIMESTAMPDIFF(SECOND, ?, `time`)) < 1');
+      localParams.push(norm.slice(0, 19));
+    } else {
+      const m = norm.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      let ymd = null;
+      if (m) {
+        ymd = `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(norm)) {
+        ymd = norm.slice(0, 10);
+      }
+      if (ymd) { orParts.push('DATE(`time`) = ?'); localParams.push(ymd); }
+    }
+    if (orParts.length > 0) { whereClauses.push('(' + orParts.join(' OR ') + ')'); params.push(...localParams); }
   }
 
   const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-  
-  const baseQuery = `SELECT id, temperature, light, humidity, \`time\` FROM sensor_data ${whereString} ORDER BY ${sortColSafe} ${sortDirSafe} LIMIT ? OFFSET ?`;
+  const effectiveLimit = hasTimeExact ? 1 : limit;
+  const effectiveOffset = hasTimeExact ? 0 : offset;
+  const baseQuery = `SELECT ${selectColumns} FROM sensor_data ${whereString} ORDER BY ${sortColSafe} ${sortDirSafe} LIMIT ? OFFSET ?`;
   const countQuery = `SELECT COUNT(*) as total FROM sensor_data ${whereString}`;
 
-  const dataParams = [...params, limit, offset];
+  const dataParams = [...params, effectiveLimit, effectiveOffset];
   const countParams = [...params];
 
   pool.query(countQuery, countParams, (err, countResults) => {
     if (err) return res.status(500).json({ error: 'Database count query error' });
-    
     pool.query(baseQuery, dataParams, (err2, results) => {
       if (err2) return res.status(500).json({ error: 'Database data query error' });
-      
+      if (hasTimeExact) {
+        console.log('[API /api/data] timeExact results count:', results?.length || 0);
+      }
       const total = countResults[0]?.total || 0;
       res.json({
         data: results,
         pagination: {
           total,
           currentPage: page,
-          totalPages: Math.ceil(total / limit),
-          limit
+          totalPages: hasTimeExact ? 1 : Math.ceil(total / limit),
+          limit: hasTimeExact ? 1 : limit
         }
       });
     });

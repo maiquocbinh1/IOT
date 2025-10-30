@@ -47,6 +47,12 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
       const t = setTimeout(() => setLoadingDevice(null), 1000);
       return () => clearTimeout(t);
     }
+    // If hardware just disconnected, show a brief loading overlay before indicating disconnected
+    if (!isConnected && prevConnectedRef.current) {
+      setLoadingDevice('disconnect');
+      const t = setTimeout(() => setLoadingDevice(null), 1000);
+      return () => clearTimeout(t);
+    }
     prevConnectedRef.current = !!isConnected;
   }, [isConnected]);
 

@@ -67,13 +67,17 @@ class ApiService {
     }
 
     async getSensorData(params = {}) {
-        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection, timeSearch } = params;
+        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection, timeSearch, timeExact, columnFilter, sortBy, order } = params;
         const queryParams = {
             page,
             limit,
             ...(filterType && { filterType }),
             ...(searchQuery && { searchQuery }),
             ...(timeSearch && { timeSearch }),
+            ...(timeExact && { timeExact }),
+            ...(columnFilter && { columnFilter }),
+            ...(sortBy && { sortBy }),
+            ...(order && { order }),
             ...(sortColumn && { sortColumn }),
             ...(sortDirection && { sortDirection })
         };

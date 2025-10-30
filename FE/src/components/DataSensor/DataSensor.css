@@ -38,7 +38,7 @@
 
 .search-wrapper {
   position: relative;
-  flex: 1;
+  flex: 1 1 60%;
 }
 
 .id-search-wrapper {
@@ -72,16 +72,30 @@
 
 .search-wrapper input {
   width: 100%;
-  padding: 10px 40px;
+  padding: 10px 40px 10px 38px;
   border: 1px solid #d1d5db;
   border-radius: 12px;
   font-size: 14px;
+  height: 40px;
+  line-height: 20px;
 }
 
 .search-icon {
   position: absolute;
   left: 12px;
-  top: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Make selects visually aligned with the input */
+.search-bar select {
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  height: 40px;
+  background: #fff;
+  min-width: 160px;
 }
 
 .filter {
@@ -421,10 +435,7 @@
   width: 17%; /* Time */
 }
 
-.data-table th:nth-child(6),
-.data-table td:nth-child(6) {
-  width: 17%; /* Time Range */
-}
+/* Removed Time Range column width */
 
 .id-tag {
   background-color: #e7f7ec;
