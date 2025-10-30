@@ -3,6 +3,29 @@ import './DeviceControl.css';
 import apiService from '../../services/api';
 import webSocketService from '../../services/websocket';
 
+// Map friendly names in FE to backend-understood device ids
+const mapDeviceNameToBackend = (name) => {
+  const key = String(name || '').toLowerCase().replace(/\s+/g, '_');
+  switch (key) {
+    case 'fan':
+      return 'led1';
+    case 'air_conditioner':
+    case 'airconditioner':
+      return 'led2';
+    case 'light':
+      return 'led3';
+    default:
+      return name; // fallback: send as-is
+  }
+};
+
+const normalizeAction = (actionBoolOrString) => {
+  if (typeof actionBoolOrString === 'boolean') return actionBoolOrString ? 'on' : 'off';
+  const a = String(actionBoolOrString || '').toLowerCase();
+  if (a === '1' || a === 'on' || a === 'true') return 'on';
+  return 'off';
+};
+
 const DeviceControl = () => {
   const [devices, setDevices] = useState({
     fan: false,
@@ -118,7 +141,8 @@ const DeviceControl = () => {
       
       for (const device of devices) {
         console.log(`Turning off ${device}`);
-        const response = await apiService.controlDevice(device.toLowerCase(), 'off');
+        const backendName = mapDeviceNameToBackend(device);
+        const response = await apiService.controlDevice(backendName, 'off');
         if (response.success) {
           console.log(`${device} turned off successfully`);
         } else {
@@ -149,7 +173,8 @@ const DeviceControl = () => {
           console.log(`Restoring ${deviceDisplayName} to ON state`);
           
           // Send control command
-          const response = await apiService.controlDevice(deviceName, 'on');
+          const backendName = mapDeviceNameToBackend(deviceDisplayName);
+          const response = await apiService.controlDevice(backendName, 'on');
           if (response.success) {
             console.log(`${deviceDisplayName} restored to ON successfully`);
           } else {
@@ -183,13 +208,9 @@ const DeviceControl = () => {
       const newStatus = !devices[deviceName];
       
       // Map frontend device names to backend device names
-      const deviceNameMap = {
-        'fan': 'fan',
-        'airConditioner': 'air_conditioner', 
-        'light': 'light'  // Changed from 'led' to 'light' to match backend
-      };
-      
-      const backendDeviceName = deviceNameMap[deviceName];
+      const backendDeviceName = mapDeviceNameToBackend(
+        deviceName === 'airConditioner' ? 'Air Conditioner' : deviceName
+      );
       const userDisplayName = deviceName === 'fan' ? 'Fan' : 
                             deviceName === 'airConditioner' ? 'Air Conditioner' : 
                             'Light';
@@ -203,7 +224,7 @@ const DeviceControl = () => {
       // Send command via API
       try {
         console.log(`🔄 Sending control command: ${backendDeviceName} -> ${newStatus ? 'on' : 'off'}`);
-        const response = await apiService.controlDevice(backendDeviceName, newStatus ? 'on' : 'off');
+        const response = await apiService.controlDevice(backendDeviceName, normalizeAction(newStatus));
         console.log('✅ Device control API response:', response);
         
         if (response && response.success) {

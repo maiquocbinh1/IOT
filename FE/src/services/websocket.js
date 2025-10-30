@@ -58,13 +58,13 @@ class WebSocketService {
                 // Handle different message types
                 switch (data.type) {
                     case 'MQTT_STATUS':
-                        console.log('MQTT Status:', data);
                         this.emit('mqttStatus', data);
                         break;
                     case 'DATA_STATUS':
                         console.log('Data Status:', data);
                         this.emit('dataStatus', data);
                         break;
+                    // No LED_STATUS handling; revert to previous behavior
                     case 'SENSOR_DATA':
                         console.log('Sensor Data:', data);
                         this.emit('sensorData', data);

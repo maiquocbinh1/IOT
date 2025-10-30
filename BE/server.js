@@ -1,5 +1,3 @@
-// server.js
-// IoT Backend: API + MQTT + MySQL + WebSocket (NO SWAGGER, NO ICON)
 
 const express = require('express');
 const cors = require('cors');
@@ -20,6 +18,31 @@ let isMqttConnected = false;
 let isEsp32DataConnected = false;
 let lastDataTimestamp = 0;
 const DATA_TIMEOUT = 10000;
+
+// ===== Simple mapping & normalization settings (editable) =====
+const DEVICE_NAME_MAP = {
+  fan: 'led1',
+  air_conditioner: 'led2',
+  airconditioner: 'led2',
+  'air conditioner': 'led2',
+  light: 'led3',
+  led1: 'led1',
+  led2: 'led2',
+  led3: 'led3'
+};
+
+function normalizeDeviceName(input) {
+  const raw = String(input || '').trim().toLowerCase();
+  const key = raw.replace(/\s+/g, '_');
+  return DEVICE_NAME_MAP[key] || ( /^led[123]$/.test(key) ? key : raw );
+}
+
+function normalizeAction(input) {
+  const raw = String(input || '').trim().toLowerCase();
+  if (raw === '1' || raw === 'on' || raw === 'true') return 'on';
+  if (raw === '0' || raw === 'off' || raw === 'false') return 'off';
+  return raw;
+}
 
 wss.on('connection', (ws) => {
   console.log('New WebSocket client connected');
@@ -112,9 +135,12 @@ function checkDataConnection() {
 setInterval(checkDataConnection, 5000);
 
 mqttClient.on('message', async (topic, message) => {
-  try {
-    const data = JSON.parse(message.toString());
-    if (topic === SENSOR_TOPIC) {
+  const raw = message.toString();
+
+  // SENSOR_TOPIC expects strict JSON
+  if (topic === SENSOR_TOPIC) {
+    try {
+      const data = JSON.parse(raw);
       lastDataTimestamp = Date.now();
       if (!isEsp32DataConnected) {
         isEsp32DataConnected = true;
@@ -123,12 +149,11 @@ mqttClient.on('message', async (topic, message) => {
 
       const sql = `INSERT INTO sensor_data (temperature, humidity, light, time) VALUES (?, ?, ?, NOW())`;
       const params = [data.temperature, data.humidity, data.light];
-      
+
       pool.query(sql, params, (err) => {
         if (err) {
           console.error('DB insert error:', err);
         } else {
-          console.log(`Sensor data saved to DB: T=${data.temperature}, H=${data.humidity}, L=${data.light}`);
           const sensorData = {
             type: 'SENSOR_DATA',
             temperature: data.temperature,
@@ -136,26 +161,42 @@ mqttClient.on('message', async (topic, message) => {
             light: data.light,
             time: new Date().toISOString()
           };
-          console.log('Broadcasting sensor data to WebSocket clients:', sensorData);
           wss.clients.forEach((ws) => {
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify(sensorData));
-              console.log('Sent to WebSocket client');
-            } else {
-              console.log('WebSocket client not ready');
             }
           });
         }
       });
+    } catch (e) {
+      console.warn('Ignoring non-JSON sensor payload:', raw);
+    }
+    return;
+  }
+
+  // STATUS_TOPIC: support JSON or simple csv "led1:0,led2:1,led3:0" without throwing
+  if (topic === STATUS_TOPIC) {
+    let handled = false;
+    try {
+      const data = JSON.parse(raw);
+      if (data?.led && (data.status === 'on' || data.status === 'off')) {
+        if (currentLedStatus[data.led] !== undefined) {
+          currentLedStatus[data.led] = data.status;
+          handled = true;
+        }
+      }
+    } catch {}
+
+    if (!handled) {
+      raw.split(',').forEach((pair) => {
+        const [k, v] = pair.split(':').map((s) => s && s.trim());
+        if (k && Object.prototype.hasOwnProperty.call(currentLedStatus, k)) {
+          currentLedStatus[k] = v === '1' || v === 'on' ? 'on' : 'off';
+        }
+      });
     }
 
-    if (topic === STATUS_TOPIC && data?.led && ['on', 'off'].includes(data.status)) {
-      if (currentLedStatus[data.led] !== undefined) {
-        currentLedStatus[data.led] = data.status;
-      }
-    }
-  } catch (error) {
-    console.error('Error processing MQTT message:', error);
+    // No WebSocket LED status broadcast to keep behavior as before
   }
 });
 //api lấy dữ liệu cảm biến mới nhất
@@ -196,48 +237,49 @@ app.get('/api/connection-status', (req, res) => {
 
 //api điều khiển đèn
 app.post('/api/control', (req, res) => {
+  console.log('Request body:', req.body);
   const { deviceName, action } = req.body;
-  if (!deviceName || !action) return res.status(400).json({ error: 'Missing fields' });
-  
-  // Check if ESP32 is connected before allowing control
-  console.log(`Control request: ${deviceName} ${action}, ESP32 connected: ${isEsp32DataConnected}`);
-  if (!isEsp32DataConnected) {
-    console.log(`ESP32 disconnected - rejecting control command: ${deviceName} ${action}`);
-    return res.status(503).json({ error: 'ESP32 disconnected - cannot control devices' });
+
+  if (!deviceName || !action) {
+    return res.status(400).json({ error: 'Thiếu deviceName hoặc action' });
   }
 
-  const description = `Turned ${action.toLowerCase()} the ${deviceName}`;
+  const normalizedDevice = normalizeDeviceName(deviceName);
+  const normalizedAction = normalizeAction(action);
+
+  if (!/^led[123]$/.test(normalizedDevice) || !/^(on|off)$/.test(normalizedAction)) {
+    return res.status(400).json({ error: 'Giá trị deviceName/action không hợp lệ' });
+  }
+
+  const description = `Turned ${normalizedAction} the ${normalizedDevice}`;
   const sql = `INSERT INTO action_history (device_name, action, timestamp, description) VALUES (?, ?, NOW(), ?)`;
-  const params = [deviceName, action, description];
-  
+  const params = [normalizedDevice, normalizedAction, description];
+
   pool.query(sql, params, (err) => {
     if (err) {
-      console.error('Database error:', err);
-      return res.status(500).json({ error: 'Database error' });
+      console.error('Lỗi ghi lịch sử điều khiển:', err);
+      return res.status(500).json({ error: 'Lỗi hệ thống' });
     }
 
-    console.log(`Action history saved: ${deviceName} ${action}`);
-    
-    // Map backend device names to ESP32 expected format
-    let esp32DeviceName = deviceName.toLowerCase();
-    if (deviceName === 'air_conditioner') {
-      esp32DeviceName = 'air conditioner';
-    }
-    // Note: 'light' stays as 'light', 'fan' stays as 'fan'
-    
-    const command = `${esp32DeviceName}_${action.toLowerCase()}`;
-    
-    console.log(`Attempting to publish MQTT command: ${command} to topic: ${COMMAND_TOPIC}`);
-    console.log(`MQTT client connected: ${isMqttConnected}`);
-    
-    mqttClient.publish(COMMAND_TOPIC, command, (pubErr) => {
-      if (pubErr) {
-        console.error('MQTT publish error:', pubErr);
-        return res.status(500).json({ error: 'MQTT publish error: ' + pubErr.message });
+    // Publish MQTT command to hardware if possible (non-blocking)
+    const command = `${normalizedDevice}${normalizedAction}`; // led1on | led2off | led3on
+    let published = false;
+    if (isMqttConnected) {
+      try {
+        mqttClient.publish(COMMAND_TOPIC, command, (pubErr) => {
+          if (pubErr) {
+            console.warn('Không thể gửi lệnh MQTT:', pubErr.message);
+          }
+        });
+        published = true;
+      } catch (e) {
+        console.warn('MQTT publish exception:', e.message);
       }
-      console.log(`✅ MQTT command sent successfully: ${command} to ${COMMAND_TOPIC}`);
-      res.json({ success: true, message: `Action ${action} sent to ${deviceName}` });
-    });
+    } else {
+      console.warn('MQTT chưa kết nối - chỉ lưu DB, chưa gửi phần cứng');
+    }
+
+    return res.json({ success: true, published, message: `Đã xử lý lệnh ${normalizedAction} cho ${normalizedDevice}` });
   });
 });
 //api phân trang lấy dữ liệu cảm biến
@@ -352,11 +394,26 @@ app.get('/api/actions/history', (req, res) => {
   });
 });
 
+// Update database initialization section
 const initializeServer = async () => {
   try {
     console.log('Initializing IoT Backend Server...');
+    console.log('Database Config:', {
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      database: process.env.DB_NAME,
+      port: process.env.DB_PORT
+    });
+
+    // Test database connection before proceeding
+    const dbConnection = await pool.promise().getConnection();
+    console.log('Database connection test successful');
+    dbConnection.release();
+
     const dbInitialized = await initializeDatabase();
-    if (!dbInitialized) throw new Error('Database initialization failed');
+    if (!dbInitialized) {
+      throw new Error('Database initialization failed - check your database credentials in .env file');
+    }
 
     server.listen(port, () => {
       console.log(`Server running at http://localhost:${port}`);
@@ -374,7 +431,11 @@ const initializeServer = async () => {
     process.on('SIGINT', () => shutdown('SIGINT'));
 
   } catch (error) {
-    console.error('Server initialization failed:', error);
+    console.error('Server initialization failed:', error.message);
+    if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      console.error('Database access denied - please check your database credentials');
+      console.error('Make sure your .env file contains correct DB_USER and DB_PASSWORD');
+    }
     process.exit(1);
   }
 };
