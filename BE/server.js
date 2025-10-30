@@ -88,23 +88,6 @@ const COMMAND_TOPIC = 'iot/led/control';
 const STATUS_TOPIC = 'iot/led/status';
 
 let currentLedStatus = { led1: 'off', led2: 'off', led3: 'off' };
-let recentCommands = []; // keep last 3 desired commands
-
-function pushRecentCommand(device, action) {
-  const entry = { device, action, ts: Date.now() };
-  recentCommands.unshift(entry);
-  if (recentCommands.length > 3) recentCommands = recentCommands.slice(0, 3);
-}
-
-function publishRetainedSnapshot() {
-  try {
-    const payload = {
-      state: currentLedStatus,
-      recent: recentCommands
-    };
-    mqttClient.publish(COMMAND_TOPIC, JSON.stringify(payload), { retain: true });
-  } catch {}
-}
 
 const mqttClient = mqtt.connect(mqttBrokerUrl, {
   username: process.env.MQTT_USERNAME || 'binh',
@@ -227,8 +210,7 @@ mqttClient.on('message', async (topic, message) => {
         ws.send(JSON.stringify(ledStatusPayload));
       }
     });
-  // Also publish a retained JSON snapshot (state + last 3 commands) on the same control topic
-  publishRetainedSnapshot();
+  // No retained snapshot publish – device persists its own state
   }
 });
 //api lấy dữ liệu cảm biến mới nhất
@@ -307,10 +289,8 @@ app.post('/api/control', (req, res) => {
             console.warn('Không thể gửi lệnh MQTT:', pubErr.message);
           }
         });
-        // 2) Update snapshot/state and publish retained JSON to the SAME topic
-        currentLedStatus[normalizedDevice] = normalizedAction; // desired
-        pushRecentCommand(normalizedDevice, normalizedAction);
-        publishRetainedSnapshot();
+        // 2) Update in-memory state only for UI/WebSocket purposes
+        currentLedStatus[normalizedDevice] = normalizedAction;
         published = true;
       } catch (e) {
         console.warn('MQTT publish exception:', e.message);
@@ -322,70 +302,60 @@ app.post('/api/control', (req, res) => {
     return res.json({ success: true, published, message: `Đã xử lý lệnh ${normalizedAction} cho ${normalizedDevice}` });
   });
 });
-//api phân trang lấy dữ liệu cảm biến
+//api phân trang lấy dữ liệu cảm biến (ĐÃ NÂNG CẤP VỚI FILTERTYPE)
 app.get('/api/data', (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const limit = parseInt(req.query.limit) || 11;
   const offset = (page - 1) * limit;
-  const { searchQuery, filterType } = req.query;
-  const sortColumn = req.query.sortColumn;
+
+  // Lấy tất cả các tham số lọc từ frontend
+  const { searchQuery, filterType = 'All', timeSearch } = req.query;
+  const sortColumn = req.query.sortColumn || 'time';
   const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
 
   const allowedCols = ['id', 'temperature', 'light', 'humidity', 'time'];
-  const sortColSafe = allowedCols.includes(sortColumn) ? sortColumn : 'time';
+  const sortColSafe = allowedCols.includes(sortColumn) ? `\`${sortColumn}\`` : '`time`';
   const sortDirSafe = sortDirection === 'asc' ? 'ASC' : 'DESC';
 
-  let baseQuery = 'SELECT id, temperature, light, humidity, `time` FROM sensor_data';
-  let countQuery = 'SELECT COUNT(*) as total FROM sensor_data';
-
-  const whereClauses = [];
+  let whereClauses = [];
   const params = [];
 
-  if (searchQuery && filterType && filterType !== 'all') {
-    const ft = String(filterType).toLowerCase();
-    if (ft === 'time' || ft === 'timestamp') {
-      // exact date match (YYYY-MM-DD)
+  // 1. Xử lý tìm kiếm theo từ khóa và filterType
+  if (searchQuery && searchQuery.trim() !== '') {
+    const term = searchQuery.trim();
+    const type = filterType.toLowerCase();
+
+    if (type === 'all' || type === '') {
+      // Tìm kiếm toàn cục
+      const searchTerm = `%${term}%`;
+      whereClauses.push(`(CAST(id AS CHAR) LIKE ? OR CAST(temperature AS CHAR) LIKE ? OR CAST(humidity AS CHAR) LIKE ? OR CAST(light AS CHAR) LIKE ? OR \`time\` LIKE ?)`);
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    } else if (allowedCols.includes(type)) {
+      // Tìm kiếm trên một cột cụ thể
+      whereClauses.push(`\`${type}\` LIKE ?`);
+      params.push(`%${term}%`);
+    }
+  }
+  
+  // 2. Xử lý tìm kiếm theo ngày
+  if (timeSearch && timeSearch.trim() !== '') {
       whereClauses.push('DATE(`time`) = ?');
-      params.push(searchQuery);
-    } else if (ft === 'id' || ft === 'light') {
-      // integer exact match
-      const intVal = parseInt(searchQuery, 10);
-      if (!Number.isNaN(intVal)) {
-        whereClauses.push(`\`${ft}\` = ?`);
-        params.push(intVal);
-      }
-    } else if (ft === 'temperature' || ft === 'humidity') {
-      // precise match by two decimals
-      const val = parseFloat(searchQuery);
-      if (!Number.isNaN(val)) {
-        whereClauses.push(`ROUND(\`${ft}\`, 2) = ROUND(?, 2)`);
-        params.push(val);
-      }
-    }
+      params.push(timeSearch.trim());
   }
 
-  // No extra AND date filter – only use the primary filterType above
+  const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  
+  const baseQuery = `SELECT id, temperature, light, humidity, \`time\` FROM sensor_data ${whereString} ORDER BY ${sortColSafe} ${sortDirSafe} LIMIT ? OFFSET ?`;
+  const countQuery = `SELECT COUNT(*) as total FROM sensor_data ${whereString}`;
 
-  if (whereClauses.length > 0) {
-    const whereStr = ' WHERE ' + whereClauses.join(' AND ');
-    baseQuery += whereStr;
-    countQuery += whereStr;
-  }
+  const dataParams = [...params, limit, offset];
+  const countParams = [...params];
 
-  baseQuery += ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
-
-  // Use callback-based query
-  pool.query(countQuery, params, (err, countResults) => {
-    if (err) {
-      console.error('Count query error:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  pool.query(countQuery, countParams, (err, countResults) => {
+    if (err) return res.status(500).json({ error: 'Database count query error' });
     
-    pool.query(baseQuery, params, (err2, results) => {
-      if (err2) {
-        console.error('Data query error:', err2);
-        return res.status(500).json({ error: 'Database error' });
-      }
+    pool.query(baseQuery, dataParams, (err2, results) => {
+      if (err2) return res.status(500).json({ error: 'Database data query error' });
       
       const total = countResults[0]?.total || 0;
       res.json({
