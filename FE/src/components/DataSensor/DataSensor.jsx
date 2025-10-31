@@ -17,7 +17,27 @@ function useDebounce(value, delay) {
 }
 
 function getFormattedDate(timestamp) {
-  return new Date(timestamp).toLocaleString('en-GB', { hour12: false });
+  // Backend returns dd/mm/yyyy, hh:mm:ss format
+  // new Date() cannot parse this format, so we need to convert it
+  
+  if (!timestamp) return "-";
+  
+  // If it's already in the expected format (dd/mm/yyyy, hh:mm:ss), return as is
+  if (/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/.test(timestamp)) {
+    return timestamp;
+  }
+  
+  // If it's ISO format or other format, try to parse and convert
+  try {
+    const date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleString('en-GB', { hour12: false });
+    }
+  } catch (e) {
+    console.warn('Invalid date:', timestamp);
+  }
+  
+  return "-";
 }
 
 const DataSensor = () => {

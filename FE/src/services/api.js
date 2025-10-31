@@ -100,14 +100,16 @@ class ApiService {
 
     // Action History API - Updated to match backend
     async getActionHistory(params = {}) {
-        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection } = params;
+        const { page = 1, limit = 12, filterType, searchQuery, sortColumn, sortDirection, device_name, action } = params;
         const queryParams = {
             page,
             limit,
             ...(filterType && { filterType }),
             ...(searchQuery && { searchQuery }),
             ...(sortColumn && { sortColumn }),
-            ...(sortDirection && { sortDirection })
+            ...(sortDirection && { sortDirection }),
+            ...(device_name && { device_name }),
+            ...(action && { action })
         };
         return this.get('/actions/history', queryParams);
     }

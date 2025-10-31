@@ -28,19 +28,18 @@
   font-size: 20px;
 }
 
-/* Search and Filter */
-.search-filter-section {
+/* Search bar - matching DataSensor */
+.search-bar {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 15px;
   flex-shrink: 0;
 }
 
 .search-wrapper {
   position: relative;
-  flex: 1;
-  max-width: 400px;
+  flex: 1 1 60%;
 }
 
 .id-search-wrapper {
@@ -51,8 +50,8 @@
 .id-search-wrapper input {
   width: 100%;
   padding: 10px 12px 10px 35px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
   font-size: 14px;
   transition: border-color 0.3s ease;
   background-color: #fff;
@@ -85,47 +84,75 @@
 
 .search-wrapper input {
   width: 100%;
-  padding: 8px 12px 8px 40px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 10px 40px 10px 38px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
   font-size: 14px;
-  background: white;
+  height: 40px;
+  line-height: 20px;
 }
 
-.search-wrapper input:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+.filter {
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  height: 40px;
+  background: #fff;
+  min-width: 160px;
+  cursor: pointer;
 }
 
 .filter-dropdown select {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
   font-size: 14px;
   cursor: pointer;
+  height: 40px;
+  min-width: 160px;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sort-controls select {
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  height: 40px;
+  min-width: 160px;
 }
 
 .time-search input {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
   font-size: 14px;
-  width: 200px;
+  height: 40px;
+  min-width: 200px;
 }
 
 .search-btn {
-  background: #007bff;
+  background: #0d8df7;
   color: white;
   border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: 10px 16px;
+  border-radius: 12px;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 5px;
+  height: 40px;
 }
 
 .search-btn:hover {
@@ -155,16 +182,17 @@
   min-width: 100%;
 }
 
+.action-table thead {
+  background-color: #fff6e0;
+}
+
 .action-table th {
-  background: #FFF7D6;
-  color: #333;
-  font-weight: 600;
-  padding: 10px 16px;
-  text-align: center;
-  border-bottom: 1px solid #ddd;
-  font-size: 15px;
-  line-height: 1.8;
-  border-radius: 8px 8px 0 0;
+  color: #555;
+  font-weight: 500;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #f1f1f1;
+  font-size: 14px;
 }
 
 /* Sortable headers */
@@ -175,16 +203,14 @@
 }
 
 .sortable-header:hover {
-  background-color: #f0f0f0;
+  background-color: #f3f4f6;
 }
 
 .action-table td {
-  padding: 10px 16px;
-  border-bottom: 1px solid #f0f0f0;
-  text-align: center;
-  font-size: 15px;
-  line-height: 1.8;
-  border-radius: 4px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f1f1;
+  text-align: left;
+  font-size: 14px;
 }
 
 .action-table tbody tr:nth-child(even) {
@@ -202,13 +228,12 @@
 
 /* Table Cells */
 .id-badge {
-  background: #d4edda;
-  color: #155724;
+  background: #e7f7ec;
+  color: #2f855a;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  border: 1px solid #c3e6cb;
   display: inline-block;
   text-align: center;
   min-width: 50px;
@@ -217,24 +242,24 @@
 .device-cell {
   font-weight: 500;
   color: #333;
-  text-align: center;
+  text-align: left;
 }
 
 .action-cell {
   font-weight: 500;
   color: #333;
-  text-align: center;
+  text-align: left;
 }
 
 .time-cell {
   font-family: monospace;
   color: #666;
-  text-align: center;
+  text-align: left;
 }
 
 .status-badge {
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
   display: inline-block;
@@ -390,8 +415,8 @@
 
 .filter-group {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 5px;
 }
 
 .filter-group label {

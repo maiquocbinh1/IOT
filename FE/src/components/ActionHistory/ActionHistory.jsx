@@ -1,8 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { BsSearch } from 'react-icons/bs';
 import './ActionHistory.css';
 import apiService from '../../services/api';
 import webSocketService from '../../services/websocket';
+
+function getFormattedDate(timestamp) {
+  // Backend returns dd/mm/yyyy, hh:mm:ss format
+  // new Date() cannot parse this format, so we need to convert it
+  
+  if (!timestamp) return "-";
+  
+  // If it's already in the expected format (dd/mm/yyyy, hh:mm:ss), return as is
+  if (/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/.test(timestamp)) {
+    return timestamp;
+  }
+  
+  // If it's ISO format or other format, try to parse and convert
+  try {
+    const date = new Date(timestamp);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleString('en-GB', { hour12: false });
+    }
+  } catch (e) {
+    console.warn('Invalid date:', timestamp);
+  }
+  
+  return "-";
+}
 
 const ActionHistory = () => {
   // State Management
@@ -16,8 +39,7 @@ const ActionHistory = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
   
-  // Sort state
-  const [sortField, setSortField] = useState("timestamp");
+  // Sort state - always sort by timestamp
   const [sortDirection, setSortDirection] = useState("desc");
 
   // Fetch action history from backend
@@ -29,99 +51,42 @@ const ActionHistory = () => {
       // Build search parameters
       const params = {
         page: currentPage,
-        limit: 10,
-        sortColumn: sortField,
-        sortDirection: sortDirection
+        limit: 12,
+        sortColumn: 'timestamp',
+        sortDirection: sortDirection,
+        searchQuery: searchTerm.trim()
       };
 
-      // Primary filter to minimize payload (priority: date-in-search > action > device > id)
-      const term = searchTerm.trim();
-      const deviceKey = filterType === 'LED1' ? 'led1' : filterType === 'LED2' ? 'led2' : filterType === 'LED3' ? 'led3' : null;
-
-      // If user types a date like YYYY-MM-DD (or DD/MM/YYYY -> convert), use timestamp filter
-      let dateCandidate = null;
-      const m = term.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (/^\d{4}-\d{2}-\d{2}/.test(term)) {
-        dateCandidate = term.slice(0, 10);
-      } else if (m) {
-        const dd = m[1].padStart(2, '0');
-        const mm = m[2].padStart(2, '0');
-        const yyyy = m[3];
-        dateCandidate = `${yyyy}-${mm}-${dd}`;
+      // Apply device filter if selected
+      if (filterType !== 'ALL') {
+        const deviceKey = filterType === 'LED1' ? 'led1' : filterType === 'LED2' ? 'led2' : 'led3';
+        params.device_name = deviceKey;
       }
 
-      if (dateCandidate) {
-        params.filterType = 'timestamp';
-        params.searchQuery = dateCandidate;
-      } else if (actionFilter !== 'any') {
-        params.filterType = 'action';
-        params.searchQuery = actionFilter;
-      } else if (deviceKey) {
-        params.filterType = 'device_name';
-        params.searchQuery = deviceKey;
-      } else if (term && !isNaN(term)) {
-        params.filterType = 'id';
-        params.searchQuery = term;
+      // Apply action filter if selected
+      if (actionFilter !== 'any') {
+        params.action = actionFilter;
       }
 
       const response = await apiService.getActionHistory(params);
       
-      console.log('ActionHistory API Response:', response);
-      
       if (response.data) {
-        let rows = response.data || [];
-        // Normalize sort by latest first
-        rows.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-        // Apply secondary filters client-side to combine Device consistently
-        if (deviceKey) rows = rows.filter(r => String(r.device_name || '').toLowerCase() === deviceKey);
-        // If Action filter ON/OFF is chosen, show devices that are currently ON/OFF
-        if (actionFilter !== 'any') {
-          const latestPerDevice = new Map();
-          for (const r of rows) {
-            const dev = String(r.device_name || '').toLowerCase();
-            if (!latestPerDevice.has(dev)) {
-              latestPerDevice.set(dev, r); // rows are sorted desc => first is latest
-            }
-          }
-          rows = Array.from(latestPerDevice.values()).filter(r => String(r.action || '').toLowerCase() === actionFilter);
-        }
-        // When filterType = ALL and user enters a numeric ID, enforce exact ID match client-side
-        if (filterType === 'ALL' && term && !isNaN(term)) {
-          const targetId = String(parseInt(term, 10));
-          rows = rows.filter(r => String(r.id) === targetId);
-        }
-        setActionHistoryData(rows);
+        setActionHistoryData(response.data);
         setTotalPages(response.pagination?.totalPages || 1);
-        setTotalRecords((response.pagination?.total || rows.length));
-        setError(null); // Clear any previous errors
+        setTotalRecords(response.pagination?.total || 0);
+        setError(null);
       } else {
         setError('Failed to fetch action history');
-        // Only use fallback data
-          setActionHistoryData([
-            { id: 2051, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:24.000Z", description: "Sample data" },
-            { id: 2050, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:23.000Z", description: "Sample data" },
-            { id: 2049, device_name: "FAN", action: "ON", timestamp: "2025-10-10T03:08:22.000Z", description: "Sample data" },
-            { id: 2048, device_name: "AIR_CONDITIONER", action: "ON", timestamp: "2025-10-10T03:08:21.000Z", description: "Sample data" },
-            { id: 2047, device_name: "LED", action: "OFF", timestamp: "2025-10-10T03:08:20.000Z", description: "Sample data" },
-          ]);
-          setTotalPages(1);
-          setTotalRecords(5);
-        
+        setActionHistoryData([]);
+        setTotalPages(1);
+        setTotalRecords(0);
       }
     } catch (err) {
       console.error('Error fetching action history:', err);
       setError('Failed to fetch action history');
-      // Only use fallback data
-        setActionHistoryData([
-          { id: "#2051", device: "AIR_CONDITIONER", action: "ON", time: "14:20:11 24/08/2025", status: "Success" },
-          { id: "#2050", device: "LED", action: "OFF", time: "14:05:47 24/08/2025", status: "Fail" },
-          { id: "#2049", device: "FAN", action: "ON", time: "13:59:02 24/08/2025", status: "Success" },
-          { id: "#2048", device: "AIR_CONDITIONER", action: "ON", time: "13:40:18 24/08/2025", status: "Success" },
-          { id: "#2047", device: "LED", action: "OFF", time: "13:10:55 24/08/2025", status: "Fail" },
-        ]);
-        setTotalPages(1);
-        setTotalRecords(5);
-      
+      setActionHistoryData([]);
+      setTotalPages(1);
+      setTotalRecords(0);
     } finally {
       setLoading(false);
     }
@@ -129,18 +94,15 @@ const ActionHistory = () => {
 
   // Handle sort
   const handleSort = (field) => {
-    if (sortField === field) {
+    if (field === 'timestamp') { // Only allow sorting by timestamp
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
     }
   };
 
   // Load data on component mount and when filters change
   useEffect(() => {
     fetchActionHistory();
-  }, [currentPage, filterType, searchTerm, sortField, sortDirection]);
+  }, [currentPage, filterType, searchTerm, sortDirection, actionFilter]);
 
   // Auto-refresh data every 15 seconds (only when no active filters)
   useEffect(() => {
@@ -278,12 +240,12 @@ const ActionHistory = () => {
       </div>
       
       {/* Search and Filter Section - single row like DataSensor */}
-      <div className="search-filter-section" style={{display:'flex', gap:'12px', alignItems:'center', flexWrap:'wrap'}}>
-        <div className="search-wrapper" style={{flex:1, display:'flex', alignItems:'center'}}>
-          <BsSearch className="search-icon" />
+      <div className="search-bar">
+        <div className="search-wrapper">
+          <span className="search-icon">🔍</span>
           <input
             type="text"
-            placeholder="Search by ID or date/time (YYYY-MM-DD)"
+            placeholder="Search by ID, device, action, or date/time"
             value={searchTerm}
             onChange={handleSearchTermChange}
             onKeyPress={(e) => {
@@ -296,37 +258,47 @@ const ActionHistory = () => {
         </div>
 
         {/* Device filter */}
-        <div className="filter-dropdown">
-          <select value={filterType} onChange={(e)=>{ handleFilterChange(e); setCurrentPage(1); }}>
-            <option value="ALL">ALL</option>
-            <option value="LED1">Fan</option>
-            <option value="LED2">Air Conditioner</option>
-            <option value="LED3">Light</option>
-          </select>
-        </div>
+        <select 
+          value={filterType} 
+          onChange={(e) => {
+            handleFilterChange(e);
+            setCurrentPage(1);
+          }} 
+          className="filter"
+        >
+          <option value="ALL">ALL</option>
+          <option value="LED1">Fan</option>
+          <option value="LED2">Air Conditioner</option>
+          <option value="LED3">Light</option>
+        </select>
 
-        {/* Action filter always visible */}
-        <div className="filter-dropdown">
-          <select value={actionFilter} onChange={(e)=>{ setActionFilter(e.target.value); setCurrentPage(1); }}>
-            <option value="any">Any</option>
-            <option value="on">ON</option>
-            <option value="off">OFF</option>
-          </select>
-        </div>
+        {/* Action filter */}
+        <select 
+          value={actionFilter} 
+          onChange={(e) => {
+            setActionFilter(e.target.value);
+            setCurrentPage(1);
+          }} 
+          className="filter"
+        >
+          <option value="any">Any</option>
+          <option value="on">ON</option>
+          <option value="off">OFF</option>
+        </select>
 
-        {/* Sort controls (consistent with DataSensor layout) */}
-        <div className="sort-controls" style={{display:'flex', gap:'8px'}}>
-          <select value={sortField} onChange={(e)=>{ setSortField(e.target.value); setCurrentPage(1); }}>
-            <option value="timestamp">Sort by Time</option>
-            <option value="id">Sort by ID</option>
-            <option value="device_name">Sort by Device</option>
-            <option value="action">Sort by Action</option>
-          </select>
-          <select value={sortDirection} onChange={(e)=>{ setSortDirection(e.target.value); setCurrentPage(1); }}>
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-          </select>
-        </div>
+        {/* Sort controls */}
+        <select 
+          value={sortDirection} 
+          onChange={(e) => {
+            setSortDirection(e.target.value);
+            setCurrentPage(1);
+          }} 
+          className="filter"
+          style={{ marginLeft: '10px' }}
+        >
+          <option value="desc">Descending</option>
+          <option value="asc">Ascending</option>
+        </select>
       </div>
 
       {/* Date filter removed as requested */}
@@ -348,35 +320,35 @@ const ActionHistory = () => {
             <thead>
               <tr>
                 <th onClick={() => handleSort('id')} className="sortable-header">
-                  ID {sortField === 'id' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  ID {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>
                 {filterType === 'ALL' && <th onClick={() => handleSort('device_name')} className="sortable-header">
-                  Device {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Device {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'ALL' && <th onClick={() => handleSort('action')} className="sortable-header">
-                  Action {sortField === 'action' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Action {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
-                {filterType === 'ALL' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
-                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
-                </th>}
+                <th onClick={() => handleSort('timestamp')} className="sortable-header">
+                  Time {sortDirection === 'asc' ? '↑' : '↓'}
+                </th>
                 {filterType === 'ALL' && <th>Status</th>}
                 {filterType === 'LED1' && <th onClick={() => handleSort('device_name')} className="sortable-header">
-                  Fan {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Fan {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'LED1' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
-                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Time {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'LED2' && <th onClick={() => handleSort('device_name')} className="sortable-header">
-                  Air Conditioner {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Air Conditioner {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'LED2' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
-                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Time {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'LED3' && <th onClick={() => handleSort('device_name')} className="sortable-header">
-                  Light {sortField === 'device_name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Light {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
                 {filterType === 'LED3' && <th onClick={() => handleSort('timestamp')} className="sortable-header">
-                  Time {sortField === 'timestamp' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Time {sortDirection === 'asc' ? '↑' : '↓'}
                 </th>}
               </tr>
             </thead>
@@ -393,9 +365,9 @@ const ActionHistory = () => {
                     {filterType === 'ALL' && (
                       <td className="action-cell">{item.action.toUpperCase()}</td>
                     )}
-                    {filterType === 'ALL' && (
-                      <td className="time-cell">{new Date(item.timestamp).toLocaleString('vi-VN')}</td>
-                    )}
+                    <td className="time-cell">
+                      {getFormattedDate(item.timestamp)}
+                    </td>
                     {filterType === 'ALL' && (
                       <td>
                         <span className={`status-badge success`}>
@@ -410,7 +382,7 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED1' && (
                       <td className="time-cell">
-                        {new Date(item.timestamp).toLocaleString('vi-VN')}
+                        {getFormattedDate(item.timestamp)}
                       </td>
                     )}
                     {filterType === 'LED2' && (
@@ -420,7 +392,7 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED2' && (
                       <td className="time-cell">
-                        {new Date(item.timestamp).toLocaleString('vi-VN')}
+                        {getFormattedDate(item.timestamp)}
                       </td>
                     )}
                     {filterType === 'LED3' && (
@@ -430,7 +402,7 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED3' && (
                       <td className="time-cell">
-                        {new Date(item.timestamp).toLocaleString('vi-VN')}
+                        {getFormattedDate(item.timestamp)}
                       </td>
                     )}
                   </tr>
@@ -470,7 +442,7 @@ const ActionHistory = () => {
             ›
           </button>
         </div>
-        <span>Total: {totalPages} pages</span>
+        <span>Total: {totalRecords} records</span>
       </div>
 
     </div>

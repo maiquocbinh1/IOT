@@ -19,7 +19,7 @@ const Profile = () => {
     github: "https://github.com/maiquocbinh1/IOT.git",
     pdfReport: "http://localhost:5000/IOT.pdf",
     postman: "https://documenter.postman.com/view/your-api-doc",
-    swagger: "https://app.swaggerhub.com/apis/a-251/IOT/1.0.0"
+    swagger: "https://app.swaggerhub.com/apis/a-251/IOT1/3.0.0"
   };
 
   const handleLinkClick = (url) => {

@@ -47,7 +47,6 @@ function normalizeAction(input) {
 }
 
 wss.on('connection', (ws) => {
-  console.log('New WebSocket client connected');
   ws.send(JSON.stringify({ type: 'MQTT_STATUS', isConnected: isMqttConnected }));
   ws.send(JSON.stringify({ type: 'DATA_STATUS', isConnected: isEsp32DataConnected }));
   
@@ -77,9 +76,17 @@ function broadcastDataStatus() {
 }
 
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: [
+    '*',
+    'https://editor.swagger.io',
+    'https://app.swaggerhub.com',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 app.use(express.json());
 
@@ -303,7 +310,7 @@ app.post('/api/control', (req, res) => {
     return res.json({ success: true, published, message: `Đã xử lý lệnh ${normalizedAction} cho ${normalizedDevice}` });
   });
 });
-//api lấy dữ liệu cảm biến mới nhất cùng trạng thái thiết bị
+//api data
 app.get('/api/data', async (req, res) => {
   try {
     const [rows] = await poolPromise.query(`
@@ -312,8 +319,8 @@ app.get('/api/data', async (req, res) => {
         temperature,
         humidity,
         light,
-        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS created_at,
-        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS \`time\`
+        DATE_FORMAT(\`time\`, '%d/%m/%Y, %H:%i:%s') AS created_at,
+        DATE_FORMAT(\`time\`, '%d/%m/%Y, %H:%i:%s') AS \`time\`
       FROM sensor_data
       ORDER BY \`time\` DESC
       LIMIT 1
@@ -335,7 +342,7 @@ app.get('/api/data/history', async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limitParam = parseInt(req.query.limit, 10) || 13;
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 13;
-    const offset = (page - 1) * limit;
+  const offset = (page - 1) * limit;
     const rawSearch = (req.query.search || req.query.searchQuery || '').trim();
     const sortKeyRaw = (req.query.sortKey || req.query.sortColumn || 'created_at').toLowerCase();
     const sortDirectionRaw = (req.query.sortDirection || req.query.order || 'descending').toLowerCase();
@@ -351,34 +358,47 @@ app.get('/api/data/history', async (req, res) => {
     const sortColumn = allowedSortKeys[sortKeyRaw] || '`time`';
     const sortDirection = sortDirectionRaw === 'ascending' || sortDirectionRaw === 'asc' ? 'ASC' : 'DESC';
 
-    let whereClause = '';
+  let whereClause = '';
     const params = [];
 
     if (rawSearch) {
       const searchTerm = `%${rawSearch}%`;
-      whereClause = `
-        WHERE CAST(id AS CHAR) LIKE ?
-           OR CAST(temperature AS CHAR) LIKE ?
-           OR CAST(humidity AS CHAR) LIKE ?
-           OR CAST(light AS CHAR) LIKE ?
-           OR DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') LIKE ?
-      `;
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+      // Check if search term is a datetime pattern (dd/mm/yyyy, hh:mm:ss)
+      const dateTimePattern = /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/;
+      const isDateTime = dateTimePattern.test(rawSearch);
+      
+      if (isDateTime) {
+        // Exact match for datetime (Vietnam timezone UTC+7)
+        whereClause = `
+          WHERE DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') = ?
+        `;
+        params.push(rawSearch);
+      } else {
+        // Partial match for other fields
+    whereClause = `
+      WHERE CAST(id AS CHAR) LIKE ?
+        OR CAST(temperature AS CHAR) LIKE ?
+        OR CAST(humidity AS CHAR) LIKE ?
+        OR CAST(light AS CHAR) LIKE ?
+             OR DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') LIKE ?
+    `;
+    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+  }
     }
 
     const countQuery = `SELECT COUNT(*) AS totalItems FROM sensor_data ${whereClause}`;
     const [[countRow]] = await poolPromise.query(countQuery, params);
     const totalItems = countRow?.totalItems || 0;
     const totalPages = totalItems > 0 ? Math.ceil(totalItems / limit) : 0;
-
+    
     const dataQuery = `
       SELECT 
         id,
         temperature,
         humidity,
         light,
-        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS created_at,
-        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS \`time\`
+        DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') AS created_at,
+        DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') AS \`time\`
       FROM sensor_data
       ${whereClause}
       ORDER BY ${sortColumn} ${sortDirection}
@@ -387,11 +407,14 @@ app.get('/api/data/history', async (req, res) => {
 
     const [data] = await poolPromise.query(dataQuery, [...params, limit, offset]);
 
-    res.json({
-      totalItems,
-      totalPages,
-      currentPage: page,
-      data
+      res.json({
+      data,
+        pagination: {
+        total: totalItems,
+        totalPages,
+          currentPage: page,
+          limit
+        }
     });
   } catch (error) {
     console.error('Error fetching sensor history:', error.message);
@@ -400,62 +423,102 @@ app.get('/api/data/history', async (req, res) => {
 });
 //api phân trang lấy lịch sử điều khiển
 
-app.get('/api/actions/history', (req, res) => {
+app.get('/api/actions/history', async (req, res) => {
+  try {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+    const limitParam = parseInt(req.query.limit) || 10;
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 10;
   const offset = (page - 1) * limit;
-  const filterType = req.query.filterType;
-  const searchQuery = req.query.searchQuery;
+    const searchQuery = (req.query.searchQuery || '').trim();
+    const filterType = (req.query.filterType || '').trim();
+    const deviceName = (req.query.device_name || '').trim();
+    const action = (req.query.action || '').trim();
   const sortColumn = req.query.sortColumn || 'timestamp';
   const sortDirection = (req.query.sortDirection || 'desc').toLowerCase();
 
   const allowedCols = ['device_name', 'action', 'timestamp'];
-  const sortColSafe = allowedCols.includes(sortColumn) ? sortColumn : 'timestamp';
+    const sortColSafe = allowedCols.includes(sortColumn) ? `\`${sortColumn}\`` : '`timestamp`';
   const sortDirSafe = sortDirection === 'asc' ? 'ASC' : 'DESC';
 
-  let baseQuery = 'SELECT id, device_name, action, timestamp FROM action_history';
-  let countQuery = 'SELECT COUNT(*) as total FROM action_history';
   let whereClause = '';
   const params = [];
+    const conditions = [];
 
-  if (searchQuery && filterType && filterType !== 'all' && allowedCols.includes(filterType)) {
-    if (filterType === 'timestamp') {
-      whereClause = ' WHERE DATE(`timestamp`) = ?';
-      params.push(searchQuery);
-    } else {
-      whereClause = ` WHERE \`${filterType}\` LIKE ?`;
-      params.push(`%${searchQuery}%`);
-    }
-  }
-
-  baseQuery += whereClause + ` ORDER BY \`${sortColSafe}\` ${sortDirSafe} LIMIT ${limit} OFFSET ${offset}`;
-  countQuery += whereClause;
-
-  // Use callback-based query
-  pool.query(countQuery, params, (err, countResults) => {
-    if (err) {
-      console.error('Count query error:', err);
-      return res.status(500).json({ error: 'Database error' });
+    // Handle device_name filter
+    if (deviceName) {
+      conditions.push('`device_name` = ?');
+      params.push(deviceName);
     }
     
-    pool.query(baseQuery, params, (err2, results) => {
-      if (err2) {
-        console.error('Data query error:', err2);
-        return res.status(500).json({ error: 'Database error' });
-      }
+    // Handle action filter
+    if (action) {
+      conditions.push('`action` = ?');
+      params.push(action.toLowerCase());
+    }
+    
+    // Handle datetime search
+    if (searchQuery && filterType === 'timestamp_exact') {
+      conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") = ?');
+      params.push(searchQuery);
+    } else if (searchQuery && filterType === 'timestamp_date') {
+      conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y") = ?');
+      params.push(searchQuery);
+    } else if (searchQuery && filterType === 'timestamp') {
+      conditions.push('DATE(CONVERT_TZ(`timestamp`, "+00:00", "+07:00")) = ?');
+      params.push(searchQuery);
+    }
+    // Handle search query without specific filter type
+    else if (searchQuery) {
+      const searchTerm = `%${searchQuery}%`;
+      const dateTimePattern = /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/;
+      const isDateTime = dateTimePattern.test(searchQuery);
       
-      const total = countResults[0]?.total || 0;
+      if (isDateTime) {
+        conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") = ?');
+        params.push(searchQuery);
+      } else {
+        conditions.push(`(CAST(id AS CHAR) LIKE ? OR device_name LIKE ? OR action LIKE ? OR DATE_FORMAT(CONVERT_TZ(\`timestamp\`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") LIKE ?)`);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      }
+    }
+
+    // Combine all conditions with AND
+    if (conditions.length > 0) {
+      whereClause = ' WHERE ' + conditions.join(' AND ');
+    }
+
+    const countQuery = `SELECT COUNT(*) AS totalItems FROM action_history ${whereClause}`;
+    const [[countRow]] = await poolPromise.query(countQuery, params);
+    const totalItems = countRow?.totalItems || 0;
+    const totalPages = totalItems > 0 ? Math.ceil(totalItems / limit) : 0;
+
+    const dataQuery = `
+      SELECT 
+        id,
+        device_name,
+        action,
+        DATE_FORMAT(CONVERT_TZ(\`timestamp\`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") AS timestamp
+      FROM action_history
+      ${whereClause}
+      ORDER BY ${sortColSafe} ${sortDirSafe}
+      LIMIT ? OFFSET ?
+    `;
+
+    const [data] = await poolPromise.query(dataQuery, [...params, limit, offset]);
+
       res.json({
-        data: results,
+      data,
         pagination: {
-          total,
+        total: totalItems,
+        totalPages,
           currentPage: page,
-          totalPages: Math.ceil(total / limit),
           limit
         }
-      });
     });
-  });
+  } catch (error) {
+    console.error('Error fetching action history:', error.message);
+    res.status(500).json({ error: 'Failed to fetch action history' });
+  }
 });
 
 // Update database initialization section

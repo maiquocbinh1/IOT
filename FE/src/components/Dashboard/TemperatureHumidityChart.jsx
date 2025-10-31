@@ -26,6 +26,38 @@ ChartJS.register(
   Filler
 );
 
+// Helper function to parse backend datetime format (YYYY-MM-DD HH:MM:SS)
+function parseBackendDateTime(dateTimeString) {
+  if (!dateTimeString) return new Date();
+  
+  // Check if it's already in dd/mm/yyyy, hh:mm:ss format (from sensor_data with DATE_FORMAT)
+  if (/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
+    // Parse dd/mm/yyyy, hh:mm:ss
+    const [datePart, timePart] = dateTimeString.split(', ');
+    const [day, month, year] = datePart.split('/');
+    const [hours, minutes, seconds] = timePart.split(':');
+    return new Date(year, month - 1, day, hours, minutes, seconds);
+  }
+  
+  // Try to parse YYYY-MM-DD HH:MM:SS format
+  const dateMatch = dateTimeString.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (dateMatch) {
+    return new Date(dateMatch[1], dateMatch[2] - 1, dateMatch[3], dateMatch[4], dateMatch[5], dateMatch[6]);
+  }
+  
+  // Fallback to new Date()
+  try {
+    const date = new Date(dateTimeString);
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  } catch (e) {
+    console.warn('Cannot parse date:', dateTimeString);
+  }
+  
+  return new Date();
+}
+
 const TemperatureHumidityChart = () => {
   const [chartData, setChartData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,14 +76,10 @@ const TemperatureHumidityChart = () => {
             page: 1
           });
           
-          console.log('Chart API Response:', response);
-          
           let data;
           if (response && response.data && response.data.length > 0) {
-          console.log('✅ Using REAL data from API:', response.data.length, 'records');
-          console.log('📊 Real data sample:', response.data[0]);
           data = response.data.slice(0, 7).reverse().map((item, index) => {
-            const date = new Date(item.time);
+            const date = parseBackendDateTime(item.time);
             return {
               time: date.toLocaleTimeString('vi-VN', { 
                 hour: '2-digit', 
@@ -64,7 +92,6 @@ const TemperatureHumidityChart = () => {
             };
           });
         } else {
-          console.log('⚠️ Using FALLBACK data - API response:', response);
           const now = new Date();
           data = [
             { time: new Date(now.getTime() - 6*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 20, humidity: 45, light: 300 },
@@ -125,7 +152,6 @@ const TemperatureHumidityChart = () => {
           ]
         };
         
-        console.log('📈 Final chart data:', chartDataConfig);
         setChartData(chartDataConfig);
       } catch (err) {
         console.error('Error loading chart data:', err);
@@ -202,7 +228,7 @@ const TemperatureHumidityChart = () => {
         const response = await apiService.getSensorData({ limit: 7, page: 1 });
         if (response && response.data && response.data.length > 0) {
           const data = response.data.slice(0, 7).reverse().map((item, index) => {
-            const date = new Date(item.time);
+            const date = parseBackendDateTime(item.time);
             return {
               time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
               temperature: parseFloat(item.temperature),
@@ -278,14 +304,13 @@ const TemperatureHumidityChart = () => {
 
     // Listen for new sensor data via WebSocket
     const unsubscribeSensorData = webSocketService.on('sensorData', (newData) => {
-      console.log('Received real-time sensor data for chart:', newData);
       // Update chart immediately when new data arrives
       if (newData && newData.temperature) {
         // Fetch latest data to update chart
         apiService.getSensorData({ limit: 7, page: 1 }).then(response => {
           if (response && response.data && response.data.length > 0) {
             const data = response.data.slice(0, 7).reverse().map((item, index) => {
-              const date = new Date(item.time);
+              const date = parseBackendDateTime(item.time);
               return {
                 time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
                 temperature: parseFloat(item.temperature),
