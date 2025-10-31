@@ -67,26 +67,35 @@ class ApiService {
     }
 
     async getSensorData(params = {}) {
-        const { page = 1, limit = 5, filterType, searchQuery, sortColumn, sortDirection, timeSearch, timeExact, columnFilter, sortBy, order } = params;
+        const {
+            page = 1,
+            limit = 13,
+            search,
+            searchQuery,
+            sortKey,
+            sortColumn,
+            sortBy,
+            sortDirection,
+            order
+        } = params;
+
+        const searchValue = (search ?? searchQuery ?? '').toString().trim();
+        const sortKeyValue = (sortKey || sortColumn || sortBy || '').toString().trim();
+        const sortDirectionValue = (sortDirection || order || '').toString().trim();
+
         const queryParams = {
             page,
             limit,
-            ...(filterType && { filterType }),
-            ...(searchQuery && { searchQuery }),
-            ...(timeSearch && { timeSearch }),
-            ...(timeExact && { timeExact }),
-            ...(columnFilter && { columnFilter }),
-            ...(sortBy && { sortBy }),
-            ...(order && { order }),
-            ...(sortColumn && { sortColumn }),
-            ...(sortDirection && { sortDirection })
+            ...(searchValue && { search: searchValue }),
+            ...(sortKeyValue && { sortKey: sortKeyValue }),
+            ...(sortDirectionValue && { sortDirection: sortDirectionValue })
         };
-        return this.get('/data', queryParams);
+
+        return this.get('/data/history', queryParams);
     }
 
     async getSensorHistory(params = {}) {
-        const { limit = 5, page = 1 } = params;
-        return this.get('/data', { limit, page });
+        return this.getSensorData(params);
     }
 
     // Action History API - Updated to match backend

@@ -3,60 +3,30 @@ import "./DataSensor.css";
 import apiService from "../../services/api";
 import webSocketService from "../../services/websocket";
 
-//searchbar
-
-
-// Hàm parse thời gian linh hoạt (chấp nhận nhiều định dạng)
-function parseFlexibleDateTime(input) {
-  if (!input) return null;
-  const txt = String(input).trim().replace(',', '');
-  let d = new Date(txt);
-  if (!isNaN(d.getTime())) return d;
-
-  let m = txt.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m) {
-    d = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10), parseInt(m[4] || '0', 10), parseInt(m[5] || '0', 10), parseInt(m[6] || '0', 10));
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  m = txt.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (m) {
-    d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), parseInt(m[4] || '0', 10), parseInt(m[5] || '0', 10), parseInt(m[6] || '0', 10));
-    if (!isNaN(d.getTime())) return d;
-  }
-  return null;
+function useDebounce(value, delay) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
 }
 
-// Hàm so sánh hai thời gian có cùng giây hay không
-function isSameSecond(a, b) {
-  return a && b && a.getTime() - (a.getTime() % 1000) === b.getTime() - (b.getTime() % 1000);
+function getFormattedDate(timestamp) {
+  return new Date(timestamp).toLocaleString('en-GB', { hour12: false });
 }
-
-// Định dạng thời gian theo local thành 'YYYY-MM-DD HH:mm:ss' (không lệch múi giờ)
-function formatLocalYMDHMS(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const HH = String(date.getHours()).padStart(2, '0');
-  const MM = String(date.getMinutes()).padStart(2, '0');
-  const SS = String(date.getSeconds()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
-}
-
-// --- COMPONENT CHÍNH ---
 
 const DataSensor = () => {
-  // Các state để quản lý input của người dùng
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
-  
-  // State cho logic phân trang và sắp xếp
   const [currentPage, setCurrentPage] = useState(1);
   const [sortField, setSortField] = useState("time");
   const [sortDirection, setSortDirection] = useState("desc");
   
-  // State cho dữ liệu và modal
   const [sensorData, setSensorData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -69,83 +39,28 @@ const DataSensor = () => {
     light: '',
     datetime: ''
   });
+  
+  const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
-  // Hàm fetch dữ liệu được cập nhật
   const fetchSensorData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Logic tìm kiếm thời gian thông minh (hỗ trợ hh:mm hoặc hh:mm:ss)
-      const hasTimeInSearch = /(\d{1,2}:\d{2}(:\d{2})?)/.test(searchTerm);
-      let effectiveTimeSearch = '';
-      let exactTimeParam = '';
-      if (hasTimeInSearch) {
-          const parsedDate = parseFlexibleDateTime(searchTerm);
-          console.log("🕓 Parsed date:", parsedDate);
-          if (parsedDate) {
-              // timeExact: chính xác tới giây; backend sẽ ưu tiên và bỏ qua range khác
-              exactTimeParam = formatLocalYMDHMS(parsedDate);
-              console.log("✅ timeExact:", exactTimeParam);
-              // Đồng thời trích ngày (phòng trường hợp BE cũ); nhưng khi gửi timeExact sẽ không gửi timeSearch
-              effectiveTimeSearch = formatLocalYMDHMS(parsedDate).slice(0, 10);
-          }
-      }
-
       const params = {
         page: currentPage,
-        limit: hasTimeInSearch ? 1 : 13,
-        sortColumn: sortField,
-        sortDirection: sortDirection,
-        // If user pasted a full time, don't send raw text to backend; rely on day filter
-        searchQuery: hasTimeInSearch ? '' : searchTerm.trim(),
-        filterType: filterType.toLowerCase(),
-        ...(exactTimeParam ? { timeExact: exactTimeParam, time: exactTimeParam } : (effectiveTimeSearch ? { timeSearch: effectiveTimeSearch } : {})),
-        // Hint backend to select minimal columns when filtering a metric
-        ...(filterType !== 'All' ? { columnFilter: filterType.toLowerCase() } : {})
+        limit: 13,
+        search: searchTerm.trim(),
+        sortKey: sortField,
+        sortDirection: sortDirection === 'asc' ? 'ascending' : 'descending'
       };
 
-      console.log("🚀 Params gửi lên:", params);
       const response = await apiService.getSensorData(params);
       
       if (response && response.data && Array.isArray(response.data)) {
-        let finalData = response.data;
-
-        // Debug params và kết quả
-        console.log(" Params gửi lên:", params);
-        console.log(" Records received:", finalData.length);
-
-        // Luôn đảm bảo khi tìm theo thời gian đầy đủ chỉ hiển thị đúng 1 bản ghi
-        if (hasTimeInSearch) {
-          // So khớp bằng chuỗi local yyyy-MM-dd HH:mm:ss để tránh lệch múi giờ
-          const parsed = parseFlexibleDateTime(searchTerm);
-          const targetStr = parsed ? formatLocalYMDHMS(parsed) : '';
-          if (targetStr) {
-            finalData = finalData.filter((row) => {
-              const rowStr = formatLocalYMDHMS(new Date(row.time));
-              return rowStr === targetStr;
-            }).slice(0, 1);
-          } else {
-            // Fallback theo Date nếu không parse được
-            const targetDate = parseFlexibleDateTime(searchTerm);
-            if (targetDate) {
-              const exactMatch = finalData.filter(row => isSameSecond(new Date(row.time), targetDate));
-              finalData = exactMatch.length > 0 ? exactMatch.slice(0, 1) : [];
-            } else {
-              finalData = [];
-            }
-          }
-        }
-
-        setSensorData(finalData);
-        // Khi tìm theo thời gian đầy đủ, hiển thị duy nhất 1 bản ghi và cập nhật phân trang cho khớp
-        if (hasTimeInSearch) {
-          setTotalPages(1);
-          setTotalRecords(finalData.length);
-        } else {
-          setTotalPages(response.pagination?.totalPages || 1);
-          setTotalRecords(response.pagination?.total || finalData.length || 0);
-        }
+        setSensorData(response.data);
+        setTotalPages(response.pagination?.totalPages || 1);
+        setTotalRecords(response.pagination?.total || 0);
       } else {
         setError('No data received from server');
         setSensorData([]);
@@ -156,14 +71,21 @@ const DataSensor = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, searchTerm, filterType, sortField, sortDirection]);
+  }, [currentPage, searchTerm, sortField, sortDirection]);
 
-  // useEffect để gọi fetchSensorData
   useEffect(() => {
     fetchSensorData();
   }, [fetchSensorData]);
 
-  // Đồng bộ sortField với filterType (bỏ chọn Sort by thủ công)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setCurrentPage(1);
+      fetchSensorData();
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [debouncedSearchTerm, sortField, sortDirection]);
+
+  // Auto-sync sort field with filter type
   useEffect(() => {
     if (filterType === 'All') {
       setSortField('time');
@@ -171,8 +93,7 @@ const DataSensor = () => {
       setSortField(filterType.toLowerCase());
     }
   }, [filterType]);
-  
-  // WebSocket và các hàm xử lý modal giữ nguyên
+
   useEffect(() => {
     const handleUpdate = () => {
       if (currentPage === 1 && !searchTerm && filterType === 'All') {
@@ -183,67 +104,61 @@ const DataSensor = () => {
     return () => unsubscribe();
   }, [currentPage, searchTerm, filterType, fetchSensorData]);
 
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('desc');
-    }
+  const handlePageChange = (newPage) => {
+    setCurrentPage(newPage);
   };
 
   const handleAddSensor = () => setShowAddModal(true);
-  const handleCloseModal = () => { /* ... */ };
-  const handleInputChange = (e) => { /* ... */ };
-  const handleSubmitSensor = async (e) => { /* ... */ };
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setNewSensor({ temperature: '', humidity: '', light: '', datetime: '' });
+  };
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewSensor(prev => ({ ...prev, [name]: value }));
+  };
+  const handleSubmitSensor = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const response = await apiService.post('/sensor-data', newSensor);
+      if (response.success) {
+        handleCloseModal();
+        fetchSensorData();
+      }
+    } catch (error) {
+      console.error('Error adding sensor:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Pagination renderer
   const renderPagination = () => {
     const pages = [];
     const maxVisiblePages = 5;
     if (totalPages <= maxVisiblePages) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(
-          <button
-            key={i}
-            className={`page-btn ${currentPage === i ? 'active' : ''}`}
-            onClick={() => setCurrentPage(i)}
-          >
+          <button key={i} className={`page-btn ${currentPage === i ? 'active' : ''}`} onClick={() => handlePageChange(i)}>
             {i}
           </button>
         );
       }
     } else {
       pages.push(
-        <button
-          key={1}
-          className={`page-btn ${currentPage === 1 ? 'active' : ''}`}
-          onClick={() => setCurrentPage(1)}
-        >
-          1
-        </button>
+        <button key={1} className={`page-btn ${currentPage === 1 ? 'active' : ''}`} onClick={() => handlePageChange(1)}>1</button>
       );
       if (currentPage > 3) pages.push(<span key="el1" className="ellipsis">...</span>);
       const start = Math.max(2, currentPage - 1);
       const end = Math.min(totalPages - 1, currentPage + 1);
       for (let i = start; i <= end; i++) {
         pages.push(
-          <button
-            key={i}
-            className={`page-btn ${currentPage === i ? 'active' : ''}`}
-            onClick={() => setCurrentPage(i)}
-          >
-            {i}
-          </button>
+          <button key={i} className={`page-btn ${currentPage === i ? 'active' : ''}`} onClick={() => handlePageChange(i)}>{i}</button>
         );
       }
       if (currentPage < totalPages - 2) pages.push(<span key="el2" className="ellipsis">...</span>);
       pages.push(
-        <button
-          key={totalPages}
-          className={`page-btn ${currentPage === totalPages ? 'active' : ''}`}
-          onClick={() => setCurrentPage(totalPages)}
-        >
+        <button key={totalPages} className={`page-btn ${currentPage === totalPages ? 'active' : ''}`} onClick={() => handlePageChange(totalPages)}>
           {totalPages}
         </button>
       );
@@ -253,7 +168,6 @@ const DataSensor = () => {
 
   return (
     <div className="data-sensor-page">
-      {/*  */}
       <div className="header">
         <h1 className="page-title">Data Sensor</h1>
       </div>
@@ -262,110 +176,114 @@ const DataSensor = () => {
           <span className="search-icon">🔍</span>
           <input
             type="text"
-            placeholder={'Search by ID or paste full time...'}
+            placeholder="Search by ID, temp, humidity, light, or date/time"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && fetchSensorData()}
           />
         </div>
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="filter"
-        >
+        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="filter">
           <option>All</option>
           <option>Temperature</option>
           <option>Humidity</option>
           <option>Light</option>
         </select>
-        {/* Global direction control only */}
         <select
           value={sortDirection}
-          onChange={(e) => { setSortDirection(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => setSortDirection(e.target.value)}
           className="filter"
           style={{ marginLeft: '10px' }}
         >
-          <option value="desc">Descending</option>
           <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
         </select>
         <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
       </div>
-      {/* Date filter removed as requested */}
+      
       <div className="table-container">
-          {loading ? (
-            <p>Loading...</p>
-          ) : error ? (
-            <p>Error: {error}</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  {(filterType === 'All' || filterType === 'Temperature') && (
-                    <th>Temperature (°C)</th>
-                  )}
-                  {(filterType === 'All' || filterType === 'Humidity') && (
-                    <th>Humidity (%)</th>
-                  )}
-                  {(filterType === 'All' || filterType === 'Light') && (
-                    <th>Light (nits)</th>
-                  )}
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sensorData.length > 0 ? (
-                  sensorData.map((row) => (
-                    <tr key={row.id}>
-                      <td><span className="id-tag">{row.id}</span></td>
-                      {(filterType === 'All' || filterType === 'Temperature') && (
-                        <td>{row.temperature}</td>
-                      )}
-                      {(filterType === 'All' || filterType === 'Humidity') && (
-                        <td>{row.humidity}</td>
-                      )}
-                      {(filterType === 'All' || filterType === 'Light') && (
-                        <td>{row.light}</td>
-                      )}
-                      <td>{new Date(row.time).toLocaleString('vi-VN')}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={filterType === 'All' ? 5 : 3} className="no-data">
-                      <p>🔍 No results found.</p>
-                    </td>
+        {loading ? (
+          <p>Loading...</p>
+        ) : error ? (
+          <p>Error: {error}</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                {(filterType === 'All' || filterType === 'Temperature') && <th>Temperature (°C)</th>}
+                {(filterType === 'All' || filterType === 'Humidity') && <th>Humidity (%)</th>}
+                {(filterType === 'All' || filterType === 'Light') && <th>Light (nits)</th>}
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sensorData.length > 0 ? (
+                sensorData.map((row) => (
+                  <tr key={row.id}>
+                    <td><span className="id-tag">{row.id}</span></td>
+                    {(filterType === 'All' || filterType === 'Temperature') && <td>{row.temperature}</td>}
+                    {(filterType === 'All' || filterType === 'Humidity') && <td>{row.humidity}</td>}
+                    {(filterType === 'All' || filterType === 'Light') && <td>{row.light}</td>}
+                    <td>{getFormattedDate(row.time)}</td>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          )}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={filterType === 'All' ? 5 : 3} className="no-data">
+                    <p>🔍 No results found.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+      
+      <div className="pagination">
+        <span>Showing {currentPage} of {totalPages} pages</span>
+        <div className="pagination-controls">
+          <button className="page-btn prev" onClick={() => handlePageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+            ‹
+          </button>
+          {renderPagination()}
+          <button className="page-btn next" onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
+            ›
+          </button>
         </div>
-        
-        {/* Pagination */}
-        <div className="pagination">
-          <span>Showing {currentPage} of {totalPages} pages</span>
-          <div className="pagination-controls">
-            <button
-              className="page-btn prev"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              ‹
-            </button>
-            {renderPagination()}
-            <button
-              className="page-btn next"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              ›
-            </button>
-          </div>
-          <span>Total: {totalRecords} records</span>
-        </div>
+        <span>Total: {totalRecords} records</span>
+      </div>
 
-        {/* Modal JSX giữ nguyên */}
+      {showAddModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Add New Sensor Data</h3>
+              <button className="modal-close" onClick={handleCloseModal}>×</button>
+            </div>
+            <form onSubmit={handleSubmitSensor} className="modal-form">
+              <div className="form-group">
+                <label>Temperature (°C):</label>
+                <input type="number" step="0.1" name="temperature" value={newSensor.temperature} onChange={handleInputChange} required />
+              </div>
+              <div className="form-group">
+                <label>Humidity (%):</label>
+                <input type="number" name="humidity" value={newSensor.humidity} onChange={handleInputChange} required />
+              </div>
+              <div className="form-group">
+                <label>Light (nits):</label>
+                <input type="number" name="light" value={newSensor.light} onChange={handleInputChange} required />
+              </div>
+              <div className="form-group">
+                <label>Date & Time:</label>
+                <input type="datetime-local" name="datetime" value={newSensor.datetime} onChange={handleInputChange} required />
+              </div>
+              <div className="modal-actions">
+                <button type="button" onClick={handleCloseModal} className="btn-cancel">Cancel</button>
+                <button type="submit" className="btn-submit">Add Sensor</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
