@@ -40,6 +40,11 @@ function getFormattedDate(timestamp) {
   return "-";
 }
 
+function handleTimeCopy(timeString) {
+  navigator.clipboard.writeText(timeString);
+  alert('Đã sao chép: ' + timeString);
+}
+
 const DataSensor = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
@@ -243,7 +248,14 @@ const DataSensor = () => {
                     {(filterType === 'All' || filterType === 'Temperature') && <td>{row.temperature}</td>}
                     {(filterType === 'All' || filterType === 'Humidity') && <td>{row.humidity}</td>}
                     {(filterType === 'All' || filterType === 'Light') && <td>{row.light}</td>}
-                    <td>{getFormattedDate(row.time)}</td>
+                    <td>
+                      <span 
+                        onClick={() => handleTimeCopy(getFormattedDate(row.time))} 
+                        className="copyable-time"
+                      >
+                        {getFormattedDate(row.time)}
+                      </span>
+                    </td>
                   </tr>
                 ))
               ) : (

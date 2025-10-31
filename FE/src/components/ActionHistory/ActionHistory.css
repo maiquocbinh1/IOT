@@ -457,6 +457,21 @@
   background-color: #c82333;
 }
 
+/* Copyable Time Cell */
+.copyable-time {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+  user-select: text;
+}
+
+.copyable-time:hover {
+  background-color: #e3f2fd;
+  color: #0d8df7;
+  box-shadow: 0 2px 4px rgba(13, 141, 247, 0.2);
+}
+
 /* Column widths - Full width distribution */
 .action-table th:nth-child(1),
 .action-table td:nth-child(1) {

@@ -151,6 +151,27 @@ const ActionHistory = () => {
     setSearchTerm(e.target.value);
   };
 
+  const getFormattedDate = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const handleTimeCopy = (timeString) => {
+    navigator.clipboard.writeText(timeString);
+    alert('Đã sao chép: ' + timeString);
+  };
 
   // Pagination Component
   const renderPagination = () => {
@@ -366,7 +387,9 @@ const ActionHistory = () => {
                       <td className="action-cell">{item.action.toUpperCase()}</td>
                     )}
                     <td className="time-cell">
-                      {getFormattedDate(item.timestamp)}
+                      <span onClick={() => handleTimeCopy(getFormattedDate(item.timestamp))} className="copyable-time">
+                        {getFormattedDate(item.timestamp)}
+                      </span>
                     </td>
                     {filterType === 'ALL' && (
                       <td>
@@ -382,7 +405,9 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED1' && (
                       <td className="time-cell">
-                        {getFormattedDate(item.timestamp)}
+                        <span onClick={() => handleTimeCopy(getFormattedDate(item.timestamp))} className="copyable-time">
+                          {getFormattedDate(item.timestamp)}
+                        </span>
                       </td>
                     )}
                     {filterType === 'LED2' && (
@@ -392,7 +417,9 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED2' && (
                       <td className="time-cell">
-                        {getFormattedDate(item.timestamp)}
+                        <span onClick={() => handleTimeCopy(getFormattedDate(item.timestamp))} className="copyable-time">
+                          {getFormattedDate(item.timestamp)}
+                        </span>
                       </td>
                     )}
                     {filterType === 'LED3' && (
@@ -402,7 +429,9 @@ const ActionHistory = () => {
                     )}
                     {filterType === 'LED3' && (
                       <td className="time-cell">
-                        {getFormattedDate(item.timestamp)}
+                        <span onClick={() => handleTimeCopy(getFormattedDate(item.timestamp))} className="copyable-time">
+                          {getFormattedDate(item.timestamp)}
+                        </span>
                       </td>
                     )}
                   </tr>
