@@ -346,6 +346,7 @@ app.get('/api/data/history', async (req, res) => {
     const rawSearch = (req.query.search || req.query.searchQuery || '').trim();
     const sortKeyRaw = (req.query.sortKey || req.query.sortColumn || 'created_at').toLowerCase();
     const sortDirectionRaw = (req.query.sortDirection || req.query.order || 'descending').toLowerCase();
+    const searchField = (req.query.searchField || '').trim().toLowerCase();
 
     const allowedSortKeys = {
       id: '`id`',
@@ -373,8 +374,22 @@ app.get('/api/data/history', async (req, res) => {
           WHERE DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') = ?
         `;
         params.push(rawSearch);
+      } else if (searchField) {
+        // Search in specific field only
+        const fieldMap = {
+          'temperature': 'CAST(temperature AS CHAR)',
+          'humidity': 'CAST(humidity AS CHAR)',
+          'light': 'CAST(light AS CHAR)',
+          'id': 'CAST(id AS CHAR)'
+        };
+        const searchColumn = fieldMap[searchField];
+        
+        if (searchColumn) {
+          whereClause = `WHERE ${searchColumn} LIKE ?`;
+          params.push(searchTerm);
+        }
       } else {
-        // Partial match for other fields
+        // Partial match for all fields
     whereClause = `
       WHERE CAST(id AS CHAR) LIKE ?
         OR CAST(temperature AS CHAR) LIKE ?

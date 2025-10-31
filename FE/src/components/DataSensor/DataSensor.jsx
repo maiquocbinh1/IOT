@@ -42,7 +42,6 @@ function getFormattedDate(timestamp) {
 
 function handleTimeCopy(timeString) {
   navigator.clipboard.writeText(timeString);
-  alert('Đã sao chép: ' + timeString);
 }
 
 const DataSensor = () => {
@@ -77,7 +76,8 @@ const DataSensor = () => {
         limit: 13,
         search: searchTerm.trim(),
         sortKey: sortField,
-        sortDirection: sortDirection === 'asc' ? 'ascending' : 'descending'
+        sortDirection: sortDirection === 'asc' ? 'ascending' : 'descending',
+        searchField: filterType === 'All' ? '' : filterType.toLowerCase()
       };
 
       const response = await apiService.getSensorData(params);
@@ -96,7 +96,7 @@ const DataSensor = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, searchTerm, sortField, sortDirection]);
+  }, [currentPage, searchTerm, sortField, sortDirection, filterType]);
 
   useEffect(() => {
     fetchSensorData();
@@ -108,7 +108,7 @@ const DataSensor = () => {
       fetchSensorData();
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [debouncedSearchTerm, sortField, sortDirection]);
+  }, [debouncedSearchTerm, sortField, sortDirection, filterType, fetchSensorData]);
 
   // Auto-sync sort field with filter type
   useEffect(() => {

@@ -72,6 +72,7 @@ class ApiService {
             limit = 13,
             search,
             searchQuery,
+            searchField,
             sortKey,
             sortColumn,
             sortBy,
@@ -80,6 +81,7 @@ class ApiService {
         } = params;
 
         const searchValue = (search ?? searchQuery ?? '').toString().trim();
+        const searchFieldValue = (searchField ?? '').toString().trim();
         const sortKeyValue = (sortKey || sortColumn || sortBy || '').toString().trim();
         const sortDirectionValue = (sortDirection || order || '').toString().trim();
 
@@ -87,6 +89,7 @@ class ApiService {
             page,
             limit,
             ...(searchValue && { search: searchValue }),
+            ...(searchFieldValue && { searchField: searchFieldValue }),
             ...(sortKeyValue && { sortKey: sortKeyValue }),
             ...(sortDirectionValue && { sortDirection: sortDirectionValue })
         };
