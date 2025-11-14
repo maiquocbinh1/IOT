@@ -11,7 +11,7 @@ import {
   Filler
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import './TemperatureHumidityChart.css';
+import './DustCO2Chart.css';
 import apiService from '../../services/api';
 import webSocketService from '../../services/websocket';
 
@@ -26,26 +26,22 @@ ChartJS.register(
   Filler
 );
 
-// Helper function to parse backend datetime format (YYYY-MM-DD HH:MM:SS)
+// Helper function to parse backend datetime format
 function parseBackendDateTime(dateTimeString) {
   if (!dateTimeString) return new Date();
   
-  // Check if it's already in dd/mm/yyyy, hh:mm:ss format (from sensor_data with DATE_FORMAT)
   if (/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/.test(dateTimeString)) {
-    // Parse dd/mm/yyyy, hh:mm:ss
     const [datePart, timePart] = dateTimeString.split(', ');
     const [day, month, year] = datePart.split('/');
     const [hours, minutes, seconds] = timePart.split(':');
     return new Date(year, month - 1, day, hours, minutes, seconds);
   }
   
-  // Try to parse YYYY-MM-DD HH:MM:SS format
   const dateMatch = dateTimeString.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
   if (dateMatch) {
     return new Date(dateMatch[1], dateMatch[2] - 1, dateMatch[3], dateMatch[4], dateMatch[5], dateMatch[6]);
   }
   
-  // Fallback to new Date()
   try {
     const date = new Date(dateTimeString);
     if (!isNaN(date.getTime())) {
@@ -58,7 +54,7 @@ function parseBackendDateTime(dateTimeString) {
   return new Date();
 }
 
-const TemperatureHumidityChart = () => {
+const DustCO2Chart = () => {
   const [chartData, setChartData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -70,35 +66,35 @@ const TemperatureHumidityChart = () => {
         setLoading(true);
         setError(null);
         
-        // Load chart data directly
-          const response = await apiService.getSensorData({
-            limit: 7,
-            page: 1
-          });
-          
-          let data;
-          if (response && response.data && response.data.length > 0) {
-          data = response.data.slice(0, 7).reverse().map((item, index) => {
+        const response = await apiService.getSensorData({
+          limit: 10,
+          page: 1
+        });
+        
+        let data;
+        if (response && response.data && response.data.length > 0) {
+          data = response.data.slice(0, 10).reverse().map((item) => {
             const date = parseBackendDateTime(item.time);
-            // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
             const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             return {
               time: timeDisplay,
-              temperature: parseFloat(item.temperature),
-              humidity: parseInt(item.humidity),
-              light: parseInt(item.light)
+              dust: parseInt(item.dust || 0),
+              co2: parseInt(item.co2 || 0)
             };
           });
         } else {
           const now = new Date();
           data = [
-            { time: new Date(now.getTime() - 6*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 20, humidity: 45, light: 300 },
-            { time: new Date(now.getTime() - 5*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 22, humidity: 48, light: 320 },
-            { time: new Date(now.getTime() - 4*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 24, humidity: 52, light: 350 },
-            { time: new Date(now.getTime() - 3*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 23, humidity: 50, light: 330 },
-            { time: new Date(now.getTime() - 2*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 25, humidity: 55, light: 380 },
-            { time: new Date(now.getTime() - 1*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 26, humidity: 58, light: 400 },
-            { time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 24, humidity: 52, light: 360 }
+            { time: new Date(now.getTime() - 9*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 50, co2: 5 },
+            { time: new Date(now.getTime() - 8*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 100, co2: 10 },
+            { time: new Date(now.getTime() - 7*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 150, co2: 15 },
+            { time: new Date(now.getTime() - 6*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 300, co2: 30 },
+            { time: new Date(now.getTime() - 5*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 350, co2: 35 },
+            { time: new Date(now.getTime() - 4*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 400, co2: 40 },
+            { time: new Date(now.getTime() - 3*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 380, co2: 38 },
+            { time: new Date(now.getTime() - 2*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 420, co2: 42 },
+            { time: new Date(now.getTime() - 1*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 450, co2: 45 },
+            { time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 400, co2: 40 }
           ];
         }
         
@@ -106,46 +102,34 @@ const TemperatureHumidityChart = () => {
           labels: data.map(item => item.time),
           datasets: [
             {
-              label: 'Temperature (°C)',
-              data: data.map(item => item.temperature),
-              borderColor: '#ff4444',
-              backgroundColor: 'rgba(255, 68, 68, 0.1)',
+              label: 'Dust (0-1000)',
+              data: data.map(item => item.dust),
+              borderColor: '#ff6b6b',
+              backgroundColor: 'rgba(255, 107, 107, 0.1)',
               borderWidth: 3,
               fill: true,
               tension: 0.4,
-              pointBackgroundColor: '#ff4444',
+              pointBackgroundColor: '#ff6b6b',
               pointBorderColor: '#ffffff',
               pointBorderWidth: 2,
               pointRadius: 6,
               pointHoverRadius: 8,
+              yAxisID: 'y'
             },
             {
-              label: 'Humidity (%)',
-              data: data.map(item => item.humidity),
-              borderColor: '#4444ff',
-              backgroundColor: 'rgba(68, 68, 255, 0.1)',
+              label: 'CO2 (0-100)',
+              data: data.map(item => item.co2),
+              borderColor: '#4ecdc4',
+              backgroundColor: 'rgba(78, 205, 196, 0.1)',
               borderWidth: 3,
               fill: true,
               tension: 0.4,
-              pointBackgroundColor: '#4444ff',
+              pointBackgroundColor: '#4ecdc4',
               pointBorderColor: '#ffffff',
               pointBorderWidth: 2,
               pointRadius: 6,
               pointHoverRadius: 8,
-            },
-            {
-              label: 'Light (nits)',
-              data: data.map(item => item.light),
-              borderColor: '#ffaa00',
-              backgroundColor: 'rgba(255, 170, 0, 0.1)',
-              borderWidth: 3,
-              fill: true,
-              tension: 0.4,
-              pointBackgroundColor: '#ffaa00',
-              pointBorderColor: '#ffffff',
-              pointBorderWidth: 2,
-              pointRadius: 6,
-              pointHoverRadius: 8,
+              yAxisID: 'y1'
             }
           ]
         };
@@ -155,59 +139,47 @@ const TemperatureHumidityChart = () => {
         console.error('Error loading chart data:', err);
         const now = new Date();
         const fallbackData = [
-          { time: new Date(now.getTime() - 6*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 20, humidity: 45, light: 300 },
-          { time: new Date(now.getTime() - 5*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 22, humidity: 48, light: 320 },
-          { time: new Date(now.getTime() - 4*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 24, humidity: 52, light: 350 },
-          { time: new Date(now.getTime() - 3*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 23, humidity: 50, light: 330 },
-          { time: new Date(now.getTime() - 2*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 25, humidity: 55, light: 380 },
-          { time: new Date(now.getTime() - 1*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 26, humidity: 58, light: 400 },
-          { time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), temperature: 24, humidity: 52, light: 360 }
+          { time: new Date(now.getTime() - 6*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 300, co2: 30 },
+          { time: new Date(now.getTime() - 5*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 350, co2: 35 },
+          { time: new Date(now.getTime() - 4*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 400, co2: 40 },
+          { time: new Date(now.getTime() - 3*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 380, co2: 38 },
+          { time: new Date(now.getTime() - 2*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 420, co2: 42 },
+          { time: new Date(now.getTime() - 1*60000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 450, co2: 45 },
+          { time: now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }), dust: 400, co2: 40 }
         ];
         
         const chartDataConfig = {
           labels: fallbackData.map(item => item.time),
           datasets: [
             {
-              label: 'Temperature (°C)',
-              data: fallbackData.map(item => item.temperature),
-              borderColor: '#ff4444',
-              backgroundColor: 'rgba(255, 68, 68, 0.1)',
+              label: 'Dust (0-1000)',
+              data: fallbackData.map(item => item.dust),
+              borderColor: '#ff6b6b',
+              backgroundColor: 'rgba(255, 107, 107, 0.1)',
               borderWidth: 3,
               fill: true,
               tension: 0.4,
-              pointBackgroundColor: '#ff4444',
+              pointBackgroundColor: '#ff6b6b',
               pointBorderColor: '#ffffff',
               pointBorderWidth: 2,
               pointRadius: 6,
               pointHoverRadius: 8,
+              yAxisID: 'y'
             },
             {
-              label: 'Humidity (%)',
-              data: fallbackData.map(item => item.humidity),
-              borderColor: '#4444ff',
-              backgroundColor: 'rgba(68, 68, 255, 0.1)',
+              label: 'CO2 (0-100)',
+              data: fallbackData.map(item => item.co2),
+              borderColor: '#4ecdc4',
+              backgroundColor: 'rgba(78, 205, 196, 0.1)',
               borderWidth: 3,
               fill: true,
               tension: 0.4,
-              pointBackgroundColor: '#4444ff',
+              pointBackgroundColor: '#4ecdc4',
               pointBorderColor: '#ffffff',
               pointBorderWidth: 2,
               pointRadius: 6,
               pointHoverRadius: 8,
-            },
-            {
-              label: 'Light (nits)',
-              data: fallbackData.map(item => item.light),
-              borderColor: '#ffaa00',
-              backgroundColor: 'rgba(255, 170, 0, 0.1)',
-              borderWidth: 3,
-              fill: true,
-              tension: 0.4,
-              pointBackgroundColor: '#ffaa00',
-              pointBorderColor: '#ffffff',
-              pointBorderWidth: 2,
-              pointRadius: 6,
-              pointHoverRadius: 8,
+              yAxisID: 'y1'
             }
           ]
         };
@@ -219,21 +191,18 @@ const TemperatureHumidityChart = () => {
 
     loadChartData();
     
-    // Real-time updates every 5 seconds
-    const interval = setInterval(async () => {
-      try {
-        // Always update chart data (whether ESP32 connected or not)
-        const response = await apiService.getSensorData({ limit: 7, page: 1 });
+    // Real-time updates
+           const interval = setInterval(async () => {
+             try {
+               const response = await apiService.getSensorData({ limit: 10, page: 1 });
         if (response && response.data && response.data.length > 0) {
-          const data = response.data.slice(0, 7).reverse().map((item, index) => {
+          const data = response.data.slice(0, 10).reverse().map((item) => {
             const date = parseBackendDateTime(item.time);
-            // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
             const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             return {
               time: timeDisplay,
-              temperature: parseFloat(item.temperature),
-              humidity: parseInt(item.humidity),
-              light: parseInt(item.light)
+              dust: parseInt(item.dust || 0),
+              co2: parseInt(item.co2 || 0)
             };
           });
           
@@ -241,46 +210,34 @@ const TemperatureHumidityChart = () => {
             labels: data.map(item => item.time),
             datasets: [
               {
-                label: 'Temperature (°C)',
-                data: data.map(item => item.temperature),
-                borderColor: '#ff4444',
-                backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                label: 'Dust (0-1000)',
+                data: data.map(item => item.dust),
+                borderColor: '#ff6b6b',
+                backgroundColor: 'rgba(255, 107, 107, 0.1)',
                 borderWidth: 3,
                 fill: true,
                 tension: 0.4,
-                pointBackgroundColor: '#ff4444',
+                pointBackgroundColor: '#ff6b6b',
                 pointBorderColor: '#ffffff',
                 pointBorderWidth: 2,
                 pointRadius: 6,
                 pointHoverRadius: 8,
+                yAxisID: 'y'
               },
               {
-                label: 'Humidity (%)',
-                data: data.map(item => item.humidity),
-                borderColor: '#4444ff',
-                backgroundColor: 'rgba(68, 68, 255, 0.1)',
+                label: 'CO2 (0-100)',
+                data: data.map(item => item.co2),
+                borderColor: '#4ecdc4',
+                backgroundColor: 'rgba(78, 205, 196, 0.1)',
                 borderWidth: 3,
                 fill: true,
                 tension: 0.4,
-                pointBackgroundColor: '#4444ff',
+                pointBackgroundColor: '#4ecdc4',
                 pointBorderColor: '#ffffff',
                 pointBorderWidth: 2,
                 pointRadius: 6,
                 pointHoverRadius: 8,
-              },
-              {
-                label: 'Light (nits)',
-                data: data.map(item => item.light),
-                borderColor: '#ffaa00',
-                backgroundColor: 'rgba(255, 170, 0, 0.1)',
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointBackgroundColor: '#ffaa00',
-                pointBorderColor: '#ffffff',
-                pointBorderWidth: 2,
-                pointRadius: 6,
-                pointHoverRadius: 8,
+                yAxisID: 'y1'
               }
             ]
           };
@@ -291,33 +248,18 @@ const TemperatureHumidityChart = () => {
       }
     }, 5000);
     
-    // WebSocket listener for real-time data
-    const unsubscribeDataStatus = webSocketService.on('dataStatus', (data) => {
-      setEsp32Connected(data.isConnected);
-    });
-
-    const unsubscribeMqttStatus = webSocketService.on('mqttStatus', (data) => {
-      if (data.isConnected) {
-        setEsp32Connected(true);
-      }
-    });
-
-    // Listen for new sensor data via WebSocket
+    // WebSocket listener
     const unsubscribeSensorData = webSocketService.on('sensorData', (newData) => {
-      // Update chart immediately when new data arrives
-      if (newData && newData.temperature) {
-        // Fetch latest data to update chart
-        apiService.getSensorData({ limit: 7, page: 1 }).then(response => {
+      if (newData && newData.dust !== undefined) {
+        apiService.getSensorData({ limit: 10, page: 1 }).then(response => {
           if (response && response.data && response.data.length > 0) {
-            const data = response.data.slice(0, 7).reverse().map((item, index) => {
+            const data = response.data.slice(0, 10).reverse().map((item) => {
               const date = parseBackendDateTime(item.time);
-              // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
               const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
               return {
                 time: timeDisplay,
-                temperature: parseFloat(item.temperature),
-                humidity: parseInt(item.humidity),
-                light: parseInt(item.light)
+                dust: parseInt(item.dust || 0),
+                co2: parseInt(item.co2 || 0)
               };
             });
             
@@ -325,46 +267,34 @@ const TemperatureHumidityChart = () => {
               labels: data.map(item => item.time),
               datasets: [
                 {
-                  label: 'Temperature (°C)',
-                  data: data.map(item => item.temperature),
-                  borderColor: '#ff4444',
-                  backgroundColor: 'rgba(255, 68, 68, 0.1)',
+                  label: 'Dust (0-1000)',
+                  data: data.map(item => item.dust),
+                  borderColor: '#ff6b6b',
+                  backgroundColor: 'rgba(255, 107, 107, 0.1)',
                   borderWidth: 3,
                   fill: true,
                   tension: 0.4,
-                  pointBackgroundColor: '#ff4444',
+                  pointBackgroundColor: '#ff6b6b',
                   pointBorderColor: '#ffffff',
                   pointBorderWidth: 2,
                   pointRadius: 6,
                   pointHoverRadius: 8,
+                  yAxisID: 'y'
                 },
                 {
-                  label: 'Humidity (%)',
-                  data: data.map(item => item.humidity),
-                  borderColor: '#4444ff',
-                  backgroundColor: 'rgba(68, 68, 255, 0.1)',
+                  label: 'CO2 (0-100)',
+                  data: data.map(item => item.co2),
+                  borderColor: '#4ecdc4',
+                  backgroundColor: 'rgba(78, 205, 196, 0.1)',
                   borderWidth: 3,
                   fill: true,
                   tension: 0.4,
-                  pointBackgroundColor: '#4444ff',
+                  pointBackgroundColor: '#4ecdc4',
                   pointBorderColor: '#ffffff',
                   pointBorderWidth: 2,
                   pointRadius: 6,
                   pointHoverRadius: 8,
-                },
-                {
-                  label: 'Light (nits)',
-                  data: data.map(item => item.light),
-                  borderColor: '#ffaa00',
-                  backgroundColor: 'rgba(255, 170, 0, 0.1)',
-                  borderWidth: 3,
-                  fill: true,
-                  tension: 0.4,
-                  pointBackgroundColor: '#ffaa00',
-                  pointBorderColor: '#ffffff',
-                  pointBorderWidth: 2,
-                  pointRadius: 6,
-                  pointHoverRadius: 8,
+                  yAxisID: 'y1'
                 }
               ]
             };
@@ -378,8 +308,6 @@ const TemperatureHumidityChart = () => {
     
     return () => {
       clearInterval(interval);
-      unsubscribeDataStatus();
-      unsubscribeMqttStatus();
       unsubscribeSensorData();
     };
   }, [esp32Connected]);
@@ -412,7 +340,7 @@ const TemperatureHumidityChart = () => {
           label: function(context) {
             const label = context.dataset.label || '';
             const value = context.parsed.y;
-            return `${label}: ${value}${label.includes('Temperature') ? '°C' : '%'}`;
+            return `${label}: ${value}`;
           }
         }
       }
@@ -446,7 +374,7 @@ const TemperatureHumidityChart = () => {
         display: true,
         position: 'left',
         min: 0,
-        max: 100,
+        max: 1000,
         grid: {
           display: true,
           color: 'rgba(0, 0, 0, 0.1)',
@@ -458,7 +386,16 @@ const TemperatureHumidityChart = () => {
             size: 11
           },
           callback: function(value) {
-            return value + '°C';
+            return value;
+          }
+        },
+        title: {
+          display: true,
+          text: 'Dust (0-1000)',
+          color: '#ff6b6b',
+          font: {
+            size: 11,
+            weight: 'bold'
           }
         }
       },
@@ -477,7 +414,16 @@ const TemperatureHumidityChart = () => {
             size: 11
           },
           callback: function(value) {
-            return value + '%';
+            return value;
+          }
+        },
+        title: {
+          display: true,
+          text: 'CO2 (0-100)',
+          color: '#4ecdc4',
+          font: {
+            size: 11,
+            weight: 'bold'
           }
         }
       }
@@ -492,9 +438,9 @@ const TemperatureHumidityChart = () => {
     }
   };
 
-        return (
-          <div className="chart-container">
-            <h2 className="section-title">Temperature, Humidity & Light</h2>
+  return (
+    <div className="chart-container">
+      <h2 className="section-title">Dust & CO2 Levels</h2>
       <div className="chart-wrapper">
         {loading ? (
           <div className="loading-message">
@@ -519,4 +465,4 @@ const TemperatureHumidityChart = () => {
   );
 };
 
-export default TemperatureHumidityChart;
+export default DustCO2Chart;

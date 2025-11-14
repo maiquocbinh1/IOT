@@ -156,18 +156,43 @@ mqttClient.on('message', async (topic, message) => {
         broadcastDataStatus();
       }
 
-      const sql = `INSERT INTO sensor_data (temperature, humidity, light, time) VALUES (?, ?, ?, NOW())`;
-      const params = [data.temperature, data.humidity, data.light];
+      const sql = `INSERT INTO sensor_data (temperature, humidity, light, dust, co2, time) VALUES (?, ?, ?, ?, ?, NOW())`;
+      const params = [data.temperature, data.humidity, data.light, data.dust, data.co2];
 
       pool.query(sql, params, (err) => {
         if (err) {
           console.error('DB insert error:', err);
         } else {
+          // Check alert condition: dust > 500 AND co2 > 50
+          let alertTriggered = false;
+          if (data.dust > 500 && data.co2 > 50) {
+            alertTriggered = true;
+            console.log('Alert: Dust > 500 AND CO2 > 50 - Triggering alert LED');
+            // Publish alert command to MQTT topic for hardware to turn on alert LED
+            mqttClient.publish('iot/led/control', 'alerton', (err) => {
+              if (err) {
+                console.error('Error publishing alert command:', err);
+              } else {
+                console.log('Alert LED command published to hardware');
+              }
+            });
+          } else {
+            // If condition no longer met, turn off alert LED
+            mqttClient.publish('iot/led/control', 'alertoff', (err) => {
+              if (err) {
+                console.error('Error publishing alert off command:', err);
+              }
+            });
+          }
+
           const sensorData = {
             type: 'SENSOR_DATA',
             temperature: data.temperature,
             humidity: data.humidity,
             light: data.light,
+            dust: data.dust,
+            co2: data.co2,
+            alertTriggered: alertTriggered,
             time: new Date().toISOString().slice(0, 19).replace('T', ' ')
           };
           wss.clients.forEach((ws) => {
@@ -224,7 +249,7 @@ mqttClient.on('message', async (topic, message) => {
 //api lấy dữ liệu cảm biến mới nhất
 app.get('/api/sensor-data', (req, res) => {
   const query = `
-    SELECT temperature, humidity, light, 
+    SELECT temperature, humidity, light, dust, co2,
     DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS time
     FROM sensor_data
     ORDER BY \`time\` DESC
@@ -237,9 +262,17 @@ app.get('/api/sensor-data', (req, res) => {
       return res.status(500).json({ error: 'Database error' });
     }
     
+    // Check alert condition
+    let alertTriggered = false;
+    const data = results[0] || {};
+    if (data.dust > 500 && data.co2 > 50) {
+      alertTriggered = true;
+    }
+    
     // Include ESP32 connection status
     const response = {
-      ...(results[0] || {}),
+      ...data,
+      alertTriggered: alertTriggered,
       esp32Connected: isEsp32DataConnected,
       mqttConnected: isMqttConnected
     };
@@ -278,6 +311,8 @@ app.get('/api/data/history', async (req, res) => {
       temperature: '`temperature`',
       humidity: '`humidity`',
       light: '`light`',
+      dust: '`dust`',
+      co2: '`co2`',
       created_at: '`time`'
     };
 
@@ -305,6 +340,8 @@ app.get('/api/data/history', async (req, res) => {
           'temperature': 'CAST(temperature AS CHAR)',
           'humidity': 'CAST(humidity AS CHAR)',
           'light': 'CAST(light AS CHAR)',
+          'dust': 'CAST(dust AS CHAR)',
+          'co2': 'CAST(co2 AS CHAR)',
           'id': 'CAST(id AS CHAR)'
         };
         const searchColumn = fieldMap[searchField];
@@ -320,9 +357,11 @@ app.get('/api/data/history', async (req, res) => {
           OR CAST(temperature AS CHAR) LIKE ?
           OR CAST(humidity AS CHAR) LIKE ?
           OR CAST(light AS CHAR) LIKE ?
+          OR CAST(dust AS CHAR) LIKE ?
+          OR CAST(co2 AS CHAR) LIKE ?
           OR DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') LIKE ?
         `;
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
       }
     }
 
@@ -337,6 +376,8 @@ app.get('/api/data/history', async (req, res) => {
         temperature,
         humidity,
         light,
+        dust,
+        co2,
         DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS created_at,
         DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS \`time\`
       FROM sensor_data

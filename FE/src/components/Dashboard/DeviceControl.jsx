@@ -26,7 +26,7 @@ const normalizeAction = (actionBoolOrString) => {
   return 'off';
 };
 
-const DeviceControl = ({ initialStatus, isConnected }) => {
+const DeviceControl = ({ initialStatus, isConnected, alertTriggered }) => {
   // Initialize with saved state from localStorage, fallback to defaults
   const [devices, setDevices] = useState(() => {
     const saved = storageService.getDeviceState();
@@ -313,6 +313,19 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
                           }}>
                        <div className={`toggle-slider ${devices.light ? 'active' : ''}`}></div>
                      </div>
+                   </div>
+                 </div>
+        </div>
+
+        <div className={`device-card ${alertTriggered ? 'alert-active' : ''}`}>
+          <div className={`device-icon alert-icon ${alertTriggered ? 'blinking' : ''}`}>🚨</div>
+                 <div className="device-content">
+                   <div className="device-name">Alert LED</div>
+                   <div className="device-status-row">
+                     <div className="device-status">
+                       Status: {alertTriggered ? 'Alert!' : 'Normal'}
+                     </div>
+                     <div className={`alert-indicator ${alertTriggered ? 'active' : ''}`}></div>
                    </div>
                  </div>
         </div>

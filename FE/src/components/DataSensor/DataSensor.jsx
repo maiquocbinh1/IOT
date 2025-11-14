@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import "./DataSensor.css";
 import apiService from "../../services/api";
 import webSocketService from "../../services/websocket";
@@ -56,24 +56,18 @@ const DataSensor = () => {
   const [error, setError] = useState(null);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newSensor, setNewSensor] = useState({
-    temperature: '',
-    humidity: '',
-    light: '',
-    datetime: ''
-  });
   
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+  const fetchSensorDataRef = useRef(null);
 
-  const fetchSensorData = useCallback(async () => {
+  const fetchSensorData = useCallback(async (page = currentPage) => {
     try {
       setLoading(true);
       setError(null);
 
       const params = {
-        page: currentPage,
-        limit: 13,
+        page: page,
+        limit: 9,
         search: searchTerm.trim(),
         sortKey: sortField,
         sortDirection: sortDirection === 'asc' ? 'ascending' : 'descending',
@@ -96,19 +90,17 @@ const DataSensor = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, searchTerm, sortField, sortDirection, filterType]);
+  }, [searchTerm, sortField, sortDirection, filterType]);
 
+  // When currentPage changes, fetch data
   useEffect(() => {
-    fetchSensorData();
-  }, [fetchSensorData]);
+    fetchSensorData(currentPage);
+  }, [currentPage, fetchSensorData]);
 
+  // When filter/sort/search changes, reset to page 1
   useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setCurrentPage(1);
-      fetchSensorData();
-    }, 500);
-    return () => clearTimeout(timeoutId);
-  }, [debouncedSearchTerm, sortField, sortDirection, filterType, fetchSensorData]);
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, sortField, sortDirection, filterType]);
 
   // Auto-sync sort field with filter type
   useEffect(() => {
@@ -122,40 +114,15 @@ const DataSensor = () => {
   useEffect(() => {
     const handleUpdate = () => {
       if (currentPage === 1 && !searchTerm && filterType === 'All') {
-        fetchSensorData();
+        fetchSensorData(1);
       }
     };
     const unsubscribe = webSocketService.on('sensorData', handleUpdate);
     return () => unsubscribe();
-  }, [currentPage, searchTerm, filterType, fetchSensorData]);
+  }, [fetchSensorData]);
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
-  };
-
-  const handleAddSensor = () => setShowAddModal(true);
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-    setNewSensor({ temperature: '', humidity: '', light: '', datetime: '' });
-  };
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewSensor(prev => ({ ...prev, [name]: value }));
-  };
-  const handleSubmitSensor = async (e) => {
-    e.preventDefault();
-    try {
-      setLoading(true);
-      const response = await apiService.post('/sensor-data', newSensor);
-      if (response.success) {
-        handleCloseModal();
-        fetchSensorData();
-      }
-    } catch (error) {
-      console.error('Error adding sensor:', error);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const renderPagination = () => {
@@ -201,7 +168,7 @@ const DataSensor = () => {
           <span className="search-icon">🔍</span>
           <input
             type="text"
-            placeholder="Search by ID, temp, humidity, light, or date/time"
+            placeholder="Search by ID, temp, humidity, light, dust, CO2, or date/time"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -211,6 +178,8 @@ const DataSensor = () => {
           <option>Temperature</option>
           <option>Humidity</option>
           <option>Light</option>
+          <option>Dust</option>
+          <option>CO2</option>
         </select>
         <select
           value={sortDirection}
@@ -221,7 +190,6 @@ const DataSensor = () => {
           <option value="asc">Ascending</option>
           <option value="desc">Descending</option>
         </select>
-        <button className="add-sensor-btn" onClick={handleAddSensor}>+ Add Sensor</button>
       </div>
       
       <div className="table-container">
@@ -237,6 +205,8 @@ const DataSensor = () => {
                 {(filterType === 'All' || filterType === 'Temperature') && <th>Temperature (°C)</th>}
                 {(filterType === 'All' || filterType === 'Humidity') && <th>Humidity (%)</th>}
                 {(filterType === 'All' || filterType === 'Light') && <th>Light (nits)</th>}
+                {(filterType === 'All' || filterType === 'Dust') && <th>Dust (0-1000)</th>}
+                {(filterType === 'All' || filterType === 'CO2') && <th>CO2 (0-100)</th>}
                 <th>Time</th>
               </tr>
             </thead>
@@ -248,6 +218,8 @@ const DataSensor = () => {
                     {(filterType === 'All' || filterType === 'Temperature') && <td>{row.temperature}</td>}
                     {(filterType === 'All' || filterType === 'Humidity') && <td>{row.humidity}</td>}
                     {(filterType === 'All' || filterType === 'Light') && <td>{row.light}</td>}
+                    {(filterType === 'All' || filterType === 'Dust') && <td>{row.dust}</td>}
+                    {(filterType === 'All' || filterType === 'CO2') && <td>{row.co2}</td>}
                     <td>
                       <span 
                         onClick={() => handleTimeCopy(row.time)} 
@@ -260,7 +232,7 @@ const DataSensor = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={filterType === 'All' ? 5 : 3} className="no-data">
+                  <td colSpan={filterType === 'All' ? 7 : (filterType === 'All' ? 7 : 3)} className="no-data">
                     <p>🔍 No results found.</p>
                   </td>
                 </tr>
@@ -284,38 +256,6 @@ const DataSensor = () => {
         <span>Total: {totalRecords} records</span>
       </div>
 
-      {showAddModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Add New Sensor Data</h3>
-              <button className="modal-close" onClick={handleCloseModal}>×</button>
-            </div>
-            <form onSubmit={handleSubmitSensor} className="modal-form">
-              <div className="form-group">
-                <label>Temperature (°C):</label>
-                <input type="number" step="0.1" name="temperature" value={newSensor.temperature} onChange={handleInputChange} required />
-              </div>
-              <div className="form-group">
-                <label>Humidity (%):</label>
-                <input type="number" name="humidity" value={newSensor.humidity} onChange={handleInputChange} required />
-              </div>
-              <div className="form-group">
-                <label>Light (nits):</label>
-                <input type="number" name="light" value={newSensor.light} onChange={handleInputChange} required />
-              </div>
-              <div className="form-group">
-                <label>Date & Time:</label>
-                <input type="datetime-local" name="datetime" value={newSensor.datetime} onChange={handleInputChange} required />
-              </div>
-              <div className="modal-actions">
-                <button type="button" onClick={handleCloseModal} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-submit">Add Sensor</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

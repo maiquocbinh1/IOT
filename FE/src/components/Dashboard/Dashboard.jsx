@@ -1,6 +1,7 @@
 import React from 'react';
 import CurrentParameters from './CurrentParameters.jsx';
 import TemperatureHumidityChart from './TemperatureHumidityChart.jsx';
+import DustCO2Chart from './DustCO2Chart.jsx';
 import DeviceControl from './DeviceControl.jsx';
 import './Dashboard.css';
 
@@ -18,8 +19,11 @@ const DashboardPage = ({ sensorData, deviceStatus, connectionStatus }) => {
         <div className="temperature-humidity-chart">
           <TemperatureHumidityChart liveData={sensorData} />
         </div>
+        <div className="dust-co2-chart">
+          <DustCO2Chart liveData={sensorData} />
+        </div>
         <div className="device-control">
-          <DeviceControl initialStatus={deviceStatus} isConnected={connectionStatus?.esp32Connected} />
+          <DeviceControl initialStatus={deviceStatus} isConnected={connectionStatus?.esp32Connected} alertTriggered={sensorData?.alertTriggered} />
         </div>
       </div>
     </div>

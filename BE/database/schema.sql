@@ -11,6 +11,8 @@ CREATE TABLE sensor_data (
     temperature DECIMAL(5,2) NULL,
     light INT(10) NULL,
     humidity INT(10) NULL,
+    dust INT(10) NULL,
+    co2 INT(10) NULL,
     time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

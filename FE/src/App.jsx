@@ -12,7 +12,7 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard');
 
   // Global dashboard state (lifted up)
-  const [sensorData, setSensorData] = useState({ temperature: 0, humidity: 0, light: 0, time: null });
+  const [sensorData, setSensorData] = useState({ temperature: 0, humidity: 0, light: 0, dust: 0, co2: 0, alertTriggered: false, time: null });
   const [deviceStatus, setDeviceStatus] = useState({ led1: 'off', led2: 'off', led3: 'off' });
   const [connectionStatus, setConnectionStatus] = useState({ esp32Connected: false, mqttConnected: false });
 
@@ -25,6 +25,9 @@ function App() {
           temperature: parseFloat(latest?.temperature || 0),
           humidity: parseFloat(latest?.humidity || 0),
           light: parseFloat(latest?.light || 0),
+          dust: parseFloat(latest?.dust || 0),
+          co2: parseFloat(latest?.co2 || 0),
+          alertTriggered: !!latest?.alertTriggered,
           time: latest?.time || null
         });
         setConnectionStatus((prev) => ({
@@ -47,6 +50,9 @@ function App() {
           temperature: parseFloat(data?.temperature || 0),
           humidity: parseFloat(data?.humidity || 0),
           light: parseFloat(data?.light || 0),
+          dust: parseFloat(data?.dust || 0),
+          co2: parseFloat(data?.co2 || 0),
+          alertTriggered: !!data?.alertTriggered,
           time: data?.time || null
         });
       };

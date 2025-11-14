@@ -32,27 +32,38 @@
 .dashboard-content {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr 1fr;
   gap: 15px;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 .current-parameters {
   grid-column: 1 / -1;
   grid-row: 1;
+  min-height: 0;
 }
 
 .temperature-humidity-chart {
   grid-column: 1;
   grid-row: 2;
-  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dust-co2-chart {
+  grid-column: 1;
+  grid-row: 3;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .device-control {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 2 / -1;
   height: 100%;
+  min-height: 0;
 }
 
 .section-title {
@@ -60,20 +71,4 @@
   font-weight: bold;
   color: #333;
   margin-bottom: 10px;
-}
-
-/* Grid layout for dashboard sections */
-.current-parameters {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-
-.temperature-humidity-chart {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.device-control {
-  grid-column: 2;
-  grid-row: 2;
 }

@@ -5,6 +5,9 @@ const CurrentParameters = ({ params, connectionStatus }) => {
   const temperature = params?.temperature;
   const humidity = params?.humidity;
   const light = params?.light;
+  const dust = params?.dust;
+  const co2 = params?.co2;
+  const alertTriggered = !!params?.alertTriggered;
   const esp32Connected = !!connectionStatus?.esp32Connected;
 
   return (
@@ -43,6 +46,28 @@ const CurrentParameters = ({ params, connectionStatus }) => {
           <div className="parameter-icon">☀️</div>
           <div className="parameter-content">
             <div className="parameter-value">{Number.isFinite(light) ? light.toFixed(0) : 'N/A'} nits</div>
+            <div className="parameter-status">
+              {esp32Connected ? 'Updated just now' : 'Last data from database'}
+            </div>
+          </div>
+        </div>
+        
+        <div className="parameter-card">
+          <div className="parameter-icon">💨</div>
+          <div className="parameter-content">
+            <div className="parameter-value">{Number.isFinite(dust) ? dust.toFixed(0) : 'N/A'}</div>
+            <div className="parameter-label">Dust (0-1000)</div>
+            <div className="parameter-status">
+              {esp32Connected ? 'Updated just now' : 'Last data from database'}
+            </div>
+          </div>
+        </div>
+        
+        <div className="parameter-card">
+          <div className="parameter-icon">🔬</div>
+          <div className="parameter-content">
+            <div className="parameter-value">{Number.isFinite(co2) ? co2.toFixed(1) : 'N/A'}</div>
+            <div className="parameter-label">CO2 (0-100)</div>
             <div className="parameter-status">
               {esp32Connected ? 'Updated just now' : 'Last data from database'}
             </div>
