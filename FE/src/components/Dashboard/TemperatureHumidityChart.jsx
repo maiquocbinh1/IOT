@@ -80,12 +80,10 @@ const TemperatureHumidityChart = () => {
           if (response && response.data && response.data.length > 0) {
           data = response.data.slice(0, 7).reverse().map((item, index) => {
             const date = parseBackendDateTime(item.time);
+            // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
+            const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             return {
-              time: date.toLocaleTimeString('vi-VN', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                second: '2-digit'
-              }),
+              time: timeDisplay,
               temperature: parseFloat(item.temperature),
               humidity: parseInt(item.humidity),
               light: parseInt(item.light)
@@ -229,8 +227,10 @@ const TemperatureHumidityChart = () => {
         if (response && response.data && response.data.length > 0) {
           const data = response.data.slice(0, 7).reverse().map((item, index) => {
             const date = parseBackendDateTime(item.time);
+            // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
+            const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             return {
-              time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              time: timeDisplay,
               temperature: parseFloat(item.temperature),
               humidity: parseInt(item.humidity),
               light: parseInt(item.light)
@@ -311,8 +311,10 @@ const TemperatureHumidityChart = () => {
           if (response && response.data && response.data.length > 0) {
             const data = response.data.slice(0, 7).reverse().map((item, index) => {
               const date = parseBackendDateTime(item.time);
+              // Extract time portion (hh:mm:ss) from database format (dd/mm/yyyy, hh:mm:ss)
+              const timeDisplay = item.time.includes(',') ? item.time.split(', ')[1] : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
               return {
-                time: date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                time: timeDisplay,
                 temperature: parseFloat(item.temperature),
                 humidity: parseInt(item.humidity),
                 light: parseInt(item.light)

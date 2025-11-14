@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './DeviceControl.css';
 import apiService from '../../services/api';
+import storageService from '../../services/storage';
 
 // Map friendly names in FE to backend-understood device ids
 const mapDeviceNameToBackend = (name) => {
@@ -26,10 +27,14 @@ const normalizeAction = (actionBoolOrString) => {
 };
 
 const DeviceControl = ({ initialStatus, isConnected }) => {
-  const [devices, setDevices] = useState({
-    fan: false,
-    airConditioner: false,
-    light: false
+  // Initialize with saved state from localStorage, fallback to defaults
+  const [devices, setDevices] = useState(() => {
+    const saved = storageService.getDeviceState();
+    return saved || {
+      fan: false,
+      airConditioner: false,
+      light: false
+    };
   });
   const [loading, setLoading] = useState(false);
   const [loadingDevice, setLoadingDevice] = useState(null);
@@ -37,6 +42,7 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
   const [success, setSuccess] = useState(null);
   const [esp32Connected, setEsp32Connected] = useState(!!isConnected);
   const prevConnectedRef = useRef(!!isConnected);
+  const hasRestoredStateRef = useRef(false);
 
   // Reflect prop changes
   useEffect(() => {
@@ -56,13 +62,36 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
     prevConnectedRef.current = !!isConnected;
   }, [isConnected]);
 
+  // Auto-save device state to localStorage whenever it changes
+  useEffect(() => {
+    storageService.saveDeviceState(devices);
+  }, [devices]);
+
+  // Restore saved device states from localStorage on component mount
+  useEffect(() => {
+    if (!hasRestoredStateRef.current && esp32Connected) {
+      hasRestoredStateRef.current = true;
+      const savedState = storageService.getDeviceState();
+      if (savedState && (savedState.fan || savedState.airConditioner || savedState.light)) {
+        console.log('Restoring saved device states to hardware:', savedState);
+        restoreDeviceStates(savedState);
+      }
+    }
+  }, [esp32Connected]);
+
+  // Sync with initialStatus from parent (from WebSocket/API)
+  // But prioritize localStorage if we have saved state
   useEffect(() => {
     if (initialStatus) {
-      setDevices({
-        fan: initialStatus.led1 === 'on' || initialStatus.led1 === true,
-        airConditioner: initialStatus.led2 === 'on' || initialStatus.led2 === true,
-        light: initialStatus.led3 === 'on' || initialStatus.led3 === true
-      });
+      const savedState = storageService.getDeviceState();
+      // Only sync from initialStatus if we don't have saved localStorage state
+      if (!savedState || (!savedState.fan && !savedState.airConditioner && !savedState.light)) {
+        setDevices({
+          fan: initialStatus.led1 === 'on' || initialStatus.led1 === true,
+          airConditioner: initialStatus.led2 === 'on' || initialStatus.led2 === true,
+          light: initialStatus.led3 === 'on' || initialStatus.led3 === true
+        });
+      }
     }
   }, [initialStatus]);
 
@@ -108,7 +137,7 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
           const backendName = mapDeviceNameToBackend(deviceDisplayName);
           const response = await apiService.controlDevice(backendName, 'on');
           if (response.success) {
-            console.log(`${deviceDisplayName} restored to ON successfully`);
+            console.log(`${deviceDisplayName} restored to ON`);
           } else {
             console.error(`Failed to restore ${deviceDisplayName}:`, response.message);
           }
@@ -153,9 +182,9 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
 
       // Send command via API
       try {
-        console.log(`🔄 Sending control command: ${backendDeviceName} -> ${newStatus ? 'on' : 'off'}`);
+        console.log(`Sending control command: ${backendDeviceName} -> ${newStatus ? 'on' : 'off'}`);
         const response = await apiService.controlDevice(backendDeviceName, normalizeAction(newStatus));
-        console.log('✅ Device control API response:', response);
+        console.log('Device control API response:', response);
         
         if (response && response.success) {
           // Update local state after successful API (actual status will also be corrected by WS)
@@ -171,7 +200,7 @@ const DeviceControl = ({ initialStatus, isConnected }) => {
           throw new Error(response?.message || 'API returned unsuccessful response');
         }
       } catch (apiError) {
-        console.error('❌ API call failed:', apiError);
+        console.error('API call failed:', apiError);
         setError(`Failed to control ${userDisplayName}: ${apiError.message}`);
         
         // Revert the state change only if API failed

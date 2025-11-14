@@ -9,7 +9,17 @@ class WebSocketService {
     }
 
     // Connect to WebSocket server
-    connect(serverUrl = 'ws://localhost:5000') {
+    connect(serverUrl = null) {
+        // Nếu không cung cấp URL, sử dụng biến môi trường hoặc localhost
+        if (!serverUrl) {
+            const baseUrl = typeof window !== 'undefined' && window.REACT_APP_WS_URL
+                ? window.REACT_APP_WS_URL
+                : (typeof process !== 'undefined' && process.env.VITE_WS_URL)
+                ? process.env.VITE_WS_URL
+                : 'ws://localhost:5000';
+            serverUrl = baseUrl;
+        }
+
         if (this.socket && this.isConnected) {
             console.log('WebSocket already connected');
             return;

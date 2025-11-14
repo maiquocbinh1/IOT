@@ -250,10 +250,10 @@ const DataSensor = () => {
                     {(filterType === 'All' || filterType === 'Light') && <td>{row.light}</td>}
                     <td>
                       <span 
-                        onClick={() => handleTimeCopy(getFormattedDate(row.time))} 
+                        onClick={() => handleTimeCopy(row.time)} 
                         className="copyable-time"
                       >
-                        {getFormattedDate(row.time)}
+                        {row.time}
                       </span>
                     </td>
                   </tr>

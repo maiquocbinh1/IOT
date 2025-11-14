@@ -14,12 +14,12 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: process.env.VITE_API_PROXY || 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
       },
       '/socket.io': {
-        target: 'http://localhost:5000',
+        target: process.env.VITE_API_PROXY || 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
         ws: true,

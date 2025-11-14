@@ -168,7 +168,7 @@ mqttClient.on('message', async (topic, message) => {
             temperature: data.temperature,
             humidity: data.humidity,
             light: data.light,
-            time: new Date().toISOString()
+            time: new Date().toISOString().slice(0, 19).replace('T', ' ')
           };
           wss.clients.forEach((ws) => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -224,7 +224,8 @@ mqttClient.on('message', async (topic, message) => {
 //api lấy dữ liệu cảm biến mới nhất
 app.get('/api/sensor-data', (req, res) => {
   const query = `
-    SELECT temperature, humidity, light, \`time\`
+    SELECT temperature, humidity, light, 
+    DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS time
     FROM sensor_data
     ORDER BY \`time\` DESC
     LIMIT 1
@@ -247,18 +248,119 @@ app.get('/api/sensor-data', (req, res) => {
   });
 });
 
-// serve project-level IOT.pdf for FE download
+// serve project-level IOT.1pdf.pdf for FE download
 app.get('/IOT.pdf', (req, res) => {
-  const pdfPath = path.join(__dirname, '..', 'IOT.pdf');
+  const pdfPath = path.join(__dirname, '..', 'IOT.1pdf.pdf');
   res.sendFile(pdfPath, (err) => {
     if (err) {
-      console.error('Error sending IOT.pdf:', err);
+      console.error('Error sending IOT.1pdf.pdf:', err);
       res.status(err.statusCode || 500).end();
     }
   });
 });
 
 
+
+//api phân trang + tìm kiếm dữ liệu cảm biến lịch sử
+app.get('/api/data/history', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limitParam = parseInt(req.query.limit, 10) || 13;
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 13;
+    const offset = (page - 1) * limit;
+    const rawSearch = (req.query.search || req.query.searchQuery || '').trim();
+    const sortKeyRaw = (req.query.sortKey || req.query.sortColumn || 'created_at').toLowerCase();
+    const sortDirectionRaw = (req.query.sortDirection || req.query.order || 'descending').toLowerCase();
+    const searchField = (req.query.searchField || '').trim().toLowerCase();
+
+    const allowedSortKeys = {
+      id: '`id`',
+      temperature: '`temperature`',
+      humidity: '`humidity`',
+      light: '`light`',
+      created_at: '`time`'
+    };
+
+    const sortColumn = allowedSortKeys[sortKeyRaw] || '`time`';
+    const sortDirection = sortDirectionRaw === 'ascending' || sortDirectionRaw === 'asc' ? 'ASC' : 'DESC';
+
+    let whereClause = '';
+    const params = [];
+
+    if (rawSearch) {
+      const searchTerm = `%${rawSearch}%`;
+      // Check if search term is a datetime pattern (YYYY-MM-DD HH:mm:ss)
+      const dateTimePattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+      const isDateTime = dateTimePattern.test(rawSearch);
+      
+      if (isDateTime) {
+        // Exact match for datetime (UTC format: YYYY-MM-DD HH:mm:ss)
+        whereClause = `
+          WHERE DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') = ?
+        `;
+        params.push(rawSearch);
+      } else if (searchField) {
+        // Search in specific field only
+        const fieldMap = {
+          'temperature': 'CAST(temperature AS CHAR)',
+          'humidity': 'CAST(humidity AS CHAR)',
+          'light': 'CAST(light AS CHAR)',
+          'id': 'CAST(id AS CHAR)'
+        };
+        const searchColumn = fieldMap[searchField];
+        
+        if (searchColumn) {
+          whereClause = `WHERE ${searchColumn} LIKE ?`;
+          params.push(searchTerm);
+        }
+      } else {
+        // Partial match for all fields
+        whereClause = `
+          WHERE CAST(id AS CHAR) LIKE ?
+          OR CAST(temperature AS CHAR) LIKE ?
+          OR CAST(humidity AS CHAR) LIKE ?
+          OR CAST(light AS CHAR) LIKE ?
+          OR DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') LIKE ?
+        `;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+      }
+    }
+
+    const countQuery = `SELECT COUNT(*) AS totalItems FROM sensor_data ${whereClause}`;
+    const [[countRow]] = await poolPromise.query(countQuery, params);
+    const totalItems = countRow?.totalItems || 0;
+    const totalPages = totalItems > 0 ? Math.ceil(totalItems / limit) : 0;
+    
+    const dataQuery = `
+      SELECT 
+        id,
+        temperature,
+        humidity,
+        light,
+        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS created_at,
+        DATE_FORMAT(\`time\`, '%Y-%m-%d %H:%i:%s') AS \`time\`
+      FROM sensor_data
+      ${whereClause}
+      ORDER BY ${sortColumn} ${sortDirection}
+      LIMIT ? OFFSET ?
+    `;
+
+    const [data] = await poolPromise.query(dataQuery, [...params, limit, offset]);
+
+    res.json({
+      data,
+      pagination: {
+        total: totalItems,
+        totalPages,
+        currentPage: page,
+        limit
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching sensor history:', error.message);
+    res.status(500).json({ error: 'Failed to fetch sensor history' });
+  }
+});
 
 //api điều khiển đèn
 app.post('/api/control', (req, res) => {
@@ -310,132 +412,6 @@ app.post('/api/control', (req, res) => {
     return res.json({ success: true, published, message: `Đã xử lý lệnh ${normalizedAction} cho ${normalizedDevice}` });
   });
 });
-//api data
-app.get('/api/data', async (req, res) => {
-  try {
-    const [rows] = await poolPromise.query(`
-      SELECT 
-        id,
-        temperature,
-        humidity,
-        light,
-        DATE_FORMAT(\`time\`, '%d/%m/%Y, %H:%i:%s') AS created_at,
-        DATE_FORMAT(\`time\`, '%d/%m/%Y, %H:%i:%s') AS \`time\`
-      FROM sensor_data
-      ORDER BY \`time\` DESC
-      LIMIT 1
-    `);
-
-    res.json({
-      sensors: rows[0] || {},
-      leds: currentLedStatus
-    });
-  } catch (error) {
-    console.error('Error fetching real-time data:', error.message);
-    res.status(500).json({ error: 'Failed to fetch real-time data' });
-  }
-});
-
-//api phân trang + tìm kiếm dữ liệu cảm biến lịch sử
-app.get('/api/data/history', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page, 10) || 1;
-    const limitParam = parseInt(req.query.limit, 10) || 13;
-    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 13;
-  const offset = (page - 1) * limit;
-    const rawSearch = (req.query.search || req.query.searchQuery || '').trim();
-    const sortKeyRaw = (req.query.sortKey || req.query.sortColumn || 'created_at').toLowerCase();
-    const sortDirectionRaw = (req.query.sortDirection || req.query.order || 'descending').toLowerCase();
-    const searchField = (req.query.searchField || '').trim().toLowerCase();
-
-    const allowedSortKeys = {
-      id: '`id`',
-      temperature: '`temperature`',
-      humidity: '`humidity`',
-      light: '`light`',
-      created_at: '`time`'
-    };
-
-    const sortColumn = allowedSortKeys[sortKeyRaw] || '`time`';
-    const sortDirection = sortDirectionRaw === 'ascending' || sortDirectionRaw === 'asc' ? 'ASC' : 'DESC';
-
-  let whereClause = '';
-    const params = [];
-
-    if (rawSearch) {
-      const searchTerm = `%${rawSearch}%`;
-      // Check if search term is a datetime pattern (dd/mm/yyyy, hh:mm:ss)
-      const dateTimePattern = /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/;
-      const isDateTime = dateTimePattern.test(rawSearch);
-      
-      if (isDateTime) {
-        // Exact match for datetime (Vietnam timezone UTC+7)
-        whereClause = `
-          WHERE DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') = ?
-        `;
-        params.push(rawSearch);
-      } else if (searchField) {
-        // Search in specific field only
-        const fieldMap = {
-          'temperature': 'CAST(temperature AS CHAR)',
-          'humidity': 'CAST(humidity AS CHAR)',
-          'light': 'CAST(light AS CHAR)',
-          'id': 'CAST(id AS CHAR)'
-        };
-        const searchColumn = fieldMap[searchField];
-        
-        if (searchColumn) {
-          whereClause = `WHERE ${searchColumn} LIKE ?`;
-          params.push(searchTerm);
-        }
-      } else {
-        // Partial match for all fields
-    whereClause = `
-      WHERE CAST(id AS CHAR) LIKE ?
-        OR CAST(temperature AS CHAR) LIKE ?
-        OR CAST(humidity AS CHAR) LIKE ?
-        OR CAST(light AS CHAR) LIKE ?
-             OR DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') LIKE ?
-    `;
-    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
-  }
-    }
-
-    const countQuery = `SELECT COUNT(*) AS totalItems FROM sensor_data ${whereClause}`;
-    const [[countRow]] = await poolPromise.query(countQuery, params);
-    const totalItems = countRow?.totalItems || 0;
-    const totalPages = totalItems > 0 ? Math.ceil(totalItems / limit) : 0;
-    
-    const dataQuery = `
-      SELECT 
-        id,
-        temperature,
-        humidity,
-        light,
-        DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') AS created_at,
-        DATE_FORMAT(CONVERT_TZ(\`time\`, "+00:00", "+07:00"), '%d/%m/%Y, %H:%i:%s') AS \`time\`
-      FROM sensor_data
-      ${whereClause}
-      ORDER BY ${sortColumn} ${sortDirection}
-      LIMIT ? OFFSET ?
-    `;
-
-    const [data] = await poolPromise.query(dataQuery, [...params, limit, offset]);
-
-      res.json({
-      data,
-        pagination: {
-        total: totalItems,
-        totalPages,
-          currentPage: page,
-          limit
-        }
-    });
-  } catch (error) {
-    console.error('Error fetching sensor history:', error.message);
-    res.status(500).json({ error: 'Failed to fetch sensor history' });
-  }
-});
 //api phân trang lấy lịch sử điều khiển
 
 app.get('/api/actions/history', async (req, res) => {
@@ -472,27 +448,16 @@ app.get('/api/actions/history', async (req, res) => {
     }
     
     // Handle datetime search
-    if (searchQuery && filterType === 'timestamp_exact') {
-      conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") = ?');
-      params.push(searchQuery);
-    } else if (searchQuery && filterType === 'timestamp_date') {
-      conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y") = ?');
-      params.push(searchQuery);
-    } else if (searchQuery && filterType === 'timestamp') {
-      conditions.push('DATE(CONVERT_TZ(`timestamp`, "+00:00", "+07:00")) = ?');
-      params.push(searchQuery);
-    }
-    // Handle search query without specific filter type
-    else if (searchQuery) {
+    if (searchQuery) {
       const searchTerm = `%${searchQuery}%`;
       const dateTimePattern = /^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/;
       const isDateTime = dateTimePattern.test(searchQuery);
       
       if (isDateTime) {
-        conditions.push('DATE_FORMAT(CONVERT_TZ(`timestamp`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") = ?');
+        conditions.push('DATE_FORMAT(`timestamp`, "%d/%m/%Y, %H:%i:%s") = ?');
         params.push(searchQuery);
       } else {
-        conditions.push(`(CAST(id AS CHAR) LIKE ? OR device_name LIKE ? OR action LIKE ? OR DATE_FORMAT(CONVERT_TZ(\`timestamp\`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") LIKE ?)`);
+        conditions.push(`(CAST(id AS CHAR) LIKE ? OR device_name LIKE ? OR action LIKE ? OR DATE_FORMAT(\`timestamp\`, "%d/%m/%Y, %H:%i:%s") LIKE ?)`);
         params.push(searchTerm, searchTerm, searchTerm, searchTerm);
       }
     }
@@ -512,7 +477,7 @@ app.get('/api/actions/history', async (req, res) => {
         id,
         device_name,
         action,
-        DATE_FORMAT(CONVERT_TZ(\`timestamp\`, "+00:00", "+07:00"), "%d/%m/%Y, %H:%i:%s") AS timestamp
+        DATE_FORMAT(\`timestamp\`, '%d/%m/%Y, %H:%i:%s') AS timestamp
       FROM action_history
       ${whereClause}
       ORDER BY ${sortColSafe} ${sortDirSafe}

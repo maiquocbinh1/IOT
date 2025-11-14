@@ -34,7 +34,13 @@ function App() {
         }));
       } catch {}
 
-      try { webSocketService.connect(); } catch {}
+      // Determine WebSocket URL from various sources
+      let wsUrl = null;
+      if (window.REACT_APP_WS_URL) wsUrl = window.REACT_APP_WS_URL;
+      else if (import.meta.env.VITE_WS_URL) wsUrl = import.meta.env.VITE_WS_URL;
+      
+      console.log('Connecting to WebSocket:', wsUrl || 'default (localhost:5000)');
+      try { webSocketService.connect(wsUrl); } catch {}
 
       const onSensor = (data) => {
         setSensorData({

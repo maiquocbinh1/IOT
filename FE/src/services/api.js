@@ -1,10 +1,13 @@
 // API Configuration
-const API_BASE_URL = 'http://localhost:5000/api';
+// Để kết nối real-time, thay đổi localhost thành IP của backend server
+// Ví dụ: 'http://192.168.x.x:5000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // API Service class
 class ApiService {
     constructor() {
         this.baseURL = API_BASE_URL;
+        console.log('API Base URL:', this.baseURL);
     }
 
     // Generic request method

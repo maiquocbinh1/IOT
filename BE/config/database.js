@@ -11,7 +11,9 @@ const dbConfig = {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    timezone: '+00:00' // Force UTC for consistency
+    timezone: '+00:00', // Keep UTC for database storage
+    supportBigNumbers: true,
+    bigNumberStrings: true
 };
 
 // Create connection pool
