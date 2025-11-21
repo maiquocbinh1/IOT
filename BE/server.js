@@ -335,7 +335,7 @@ app.get('/api/data/history', async (req, res) => {
         `;
         params.push(rawSearch);
       } else if (searchField) {
-        // Search in specific field only
+        // Search in specific field only - use exact match for all fields
         const fieldMap = {
           'temperature': 'CAST(temperature AS CHAR)',
           'humidity': 'CAST(humidity AS CHAR)',
@@ -347,8 +347,9 @@ app.get('/api/data/history', async (req, res) => {
         const searchColumn = fieldMap[searchField];
         
         if (searchColumn) {
-          whereClause = `WHERE ${searchColumn} LIKE ?`;
-          params.push(searchTerm);
+          // Use exact match (=) for all fields
+          whereClause = `WHERE ${searchColumn} = ?`;
+          params.push(rawSearch);
         }
       } else {
         // Partial match for all fields

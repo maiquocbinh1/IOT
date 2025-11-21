@@ -38,7 +38,7 @@
 DHT dht(PIN_DHT, DHT_TYPE);
 WiFiClient   wifiClient;
 PubSubClient mqtt(wifiClient);
-unsigned long lastSensorTick = 0;//ghi lai thoi gian gui du lieu
+unsigned long lastSensorTick = 0;
 
 // 3) TIỆN ÍCH: LED
 inline void setLed(uint8_t pin, bool on){ digitalWrite(pin, on ? HIGH : LOW); }

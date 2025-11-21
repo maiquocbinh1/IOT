@@ -374,6 +374,7 @@
 .table-container {
   flex: 1;
   overflow-y: auto;
+  overflow-x: auto;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   min-height: 0;
@@ -388,9 +389,10 @@
   border-collapse: collapse;
   border-radius: 12px;
   overflow: hidden;
-  table-layout: fixed;
+  table-layout: auto;
   display: table;
-  min-width: 100%;
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .data-table thead {
@@ -402,6 +404,9 @@
   text-align: left;
   padding: 12px 16px;
   border-bottom: 1px solid #f1f1f1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table th {
@@ -409,30 +414,40 @@
   font-weight: 500;
 }
 
-/* Column widths - Full width distribution */
+/* Column widths - Min width to prevent wrapping */
 .data-table th:nth-child(1),
 .data-table td:nth-child(1) {
-  width: 12%; /* ID */
+  min-width: 80px; /* ID */
 }
 
 .data-table th:nth-child(2),
 .data-table td:nth-child(2) {
-  width: 18%; /* Temperature */
+  min-width: 150px; /* Temperature */
 }
 
 .data-table th:nth-child(3),
 .data-table td:nth-child(3) {
-  width: 18%; /* Humidity */
+  min-width: 150px; /* Humidity */
 }
 
 .data-table th:nth-child(4),
 .data-table td:nth-child(4) {
-  width: 18%; /* Light */
+  min-width: 120px; /* Light */
 }
 
 .data-table th:nth-child(5),
 .data-table td:nth-child(5) {
-  width: 17%; /* Time */
+  min-width: 120px; /* Dust Sensor */
+}
+
+.data-table th:nth-child(6),
+.data-table td:nth-child(6) {
+  min-width: 120px; /* CO2 Sensor */
+}
+
+.data-table th:nth-child(7),
+.data-table td:nth-child(7) {
+  min-width: 180px; /* Time */
 }
 
 /* Removed Time Range column width */

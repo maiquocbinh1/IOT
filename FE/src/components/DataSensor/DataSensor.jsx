@@ -67,7 +67,7 @@ const DataSensor = () => {
 
       const params = {
         page: page,
-        limit: 9,
+        limit: 13,
         search: searchTerm.trim(),
         sortKey: sortField,
         sortDirection: sortDirection === 'asc' ? 'ascending' : 'descending',
